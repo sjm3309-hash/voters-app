@@ -1,0 +1,390 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import { cn } from "@/lib/utils";
+import { CheckCircle2, Clock, Eye, Heart, MessageCircle } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { CategoryId } from "./category-filter";
+import { getLikeCount, hasLiked, toggleLike } from "@/lib/likes";
+import { loadAuthUser } from "@/lib/auth";
+import { getMarketViews } from "@/lib/market-views";
+import {
+  getMarketLifecyclePhase,
+  type MarketLifecyclePhase,
+} from "@/lib/market-lifecycle";
+
+export interface MarketOption {
+  id: string;
+  label: string;
+  percentage: number;
+  color: string;
+}
+
+export interface Market {
+  id: string;
+  question: string;
+  category: Exclude<CategoryId, "all">;
+  options: MarketOption[];
+  totalPool: number;
+  comments: number;
+  endsAt: Date;
+  createdAt?: Date;
+  participants?: number;
+  /** 결과 확정(발표) 예정 시각 — 없으면 마감 후 ‘결과 대기’만 표시 */
+  resultAt?: Date;
+  /** 정산(적중 결과) 완료 시 완료 상태로 고정 */
+  winningOptionId?: string;
+  /** 카테고리 세부 탭 필터용 (예: game=lol, sports=football) */
+  subCategory?: string;
+  /** DB sub_category 표시용(예: "LoL") */
+  subCategoryLabel?: string;
+  /** DB의 bets.color에서 전달되는 강조색 */
+  accentColor?: string;
+  /** 자동 생성(운영자) 보트 표시용 */
+  isOfficial?: boolean;
+  officialAuthorName?: string;
+}
+
+interface MarketCardProps {
+  market: Market;
+  onClick?: () => void;
+}
+
+const categoryLabels: Record<Exclude<CategoryId, "all">, string> = {
+  crypto: "크립토",
+  stocks: "주식",
+  politics: "정치",
+  fun: "재미",
+  game: "게임",
+  sports: "스포츠",
+};
+
+const categoryColors: Record<Exclude<CategoryId, "all">, string> = {
+  crypto: "bg-chart-4/20 text-chart-4 border-chart-4/30",
+  stocks: "bg-neon-blue/20 text-neon-blue border-neon-blue/30",
+  politics: "bg-chart-5/20 text-chart-5 border-chart-5/30",
+  fun: "bg-chart-3/20 text-chart-3 border-chart-3/30",
+  game: "bg-chart-2/20 text-chart-2 border-chart-2/30",
+  sports: "bg-neon-green/20 text-neon-green border-neon-green/30",
+};
+
+function formatPool(value: number): string {
+  if (value >= 1000000) {
+    return `${(value / 1000000).toFixed(1)}M`;
+  }
+  if (value >= 1000) {
+    return `${Math.floor(value / 1000).toLocaleString()}K`;
+  }
+  return value.toLocaleString();
+}
+
+function getTimeRemaining(date: Date): string {
+  const now = new Date();
+  const diff = date.getTime() - now.getTime();
+
+  if (diff <= 0) return "종료됨";
+
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+
+  if (days > 0) return `${days}일 ${hours}시간 남음`;
+  return `${hours}시간 남음`;
+}
+
+function timeUntil(date: Date, now: Date): string {
+  const diff = date.getTime() - now.getTime();
+  if (diff <= 0) return "곧 마감";
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+  if (days > 0) return `${days}일 ${hours}시간 후 확정 예정`;
+  const m = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+  if (hours > 0) return `${hours}시간 ${m}분 후 확정 예정`;
+  return `${m}분 후 확정 예정`;
+}
+
+const PHASE_LABEL: Record<MarketLifecyclePhase, string> = {
+  active: "진행 중",
+  waiting: "결과 대기 중",
+  completed: "결과 확정됨",
+};
+
+function phaseStyles(phase: MarketLifecyclePhase): {
+  card: string;
+  badge: string;
+  clock: string;
+} {
+  switch (phase) {
+    case "active":
+      return {
+        card:
+          "border-chart-5/35 bg-card shadow-sm shadow-chart-5/5 hover:border-chart-5/55 hover:shadow-chart-5/15",
+        badge:
+          "border-0 bg-chart-5 text-primary-foreground shadow-sm shadow-chart-5/25",
+        clock: "text-muted-foreground",
+      };
+    case "waiting":
+      return {
+        card:
+          "border-orange-500/55 bg-orange-500/[0.07] dark:bg-orange-950/25 hover:border-orange-500/75 hover:bg-orange-500/10 dark:hover:bg-orange-950/35 shadow-sm shadow-orange-500/10",
+        badge: "border-0 bg-orange-500 text-white shadow-sm shadow-orange-500/30",
+        clock: "text-orange-700 dark:text-orange-300/95 font-medium",
+      };
+    case "completed":
+      return {
+        card:
+          "border-border/50 bg-muted/40 opacity-[0.82] grayscale-[0.88] hover:opacity-90 hover:grayscale-[0.75] hover:border-border/60",
+        badge: "border-0 bg-gray-500 text-white grayscale-0 opacity-100",
+        clock: "text-muted-foreground grayscale-0",
+      };
+    default:
+      return { card: "", badge: "", clock: "" };
+  }
+}
+
+export function MarketCard({ market, onClick }: MarketCardProps) {
+  const userId = loadAuthUser()?.name?.trim() || "anon";
+  const target = useMemo(() => ({ type: "market" as const, id: market.id }), [market.id]);
+  const [likeCount, setLikeCount] = useState<number>(0);
+  const [liked, setLiked] = useState<boolean>(false);
+  const [viewCount, setViewCount] = useState<number>(0);
+  const [now, setNow] = useState(() => new Date());
+
+  useEffect(() => {
+    setLikeCount(getLikeCount(target));
+    setLiked(hasLiked(target, userId));
+  }, [target, userId]);
+
+  useEffect(() => {
+    setViewCount(getMarketViews(market.id));
+    const onViews = () => setViewCount(getMarketViews(market.id));
+    window.addEventListener("voters:marketViewsUpdated", onViews as EventListener);
+    window.addEventListener("storage", onViews as EventListener);
+    return () => {
+      window.removeEventListener("voters:marketViewsUpdated", onViews as EventListener);
+      window.removeEventListener("storage", onViews as EventListener);
+    };
+  }, [market.id]);
+
+  useEffect(() => {
+    const onLikesUpdated = () => {
+      setLikeCount(getLikeCount(target));
+      setLiked(hasLiked(target, userId));
+    };
+    window.addEventListener("voters:likesUpdated", onLikesUpdated as EventListener);
+    window.addEventListener("storage", onLikesUpdated as EventListener);
+    return () => {
+      window.removeEventListener("voters:likesUpdated", onLikesUpdated as EventListener);
+      window.removeEventListener("storage", onLikesUpdated as EventListener);
+    };
+  }, [target, userId]);
+
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(new Date()), 30_000);
+    return () => window.clearInterval(id);
+  }, []);
+
+  const phase = useMemo(
+    () =>
+      getMarketLifecyclePhase(market.endsAt, {
+        now,
+        resultAt: market.resultAt,
+        settled: Boolean(market.winningOptionId),
+      }),
+    [market.endsAt, market.resultAt, market.winningOptionId, now],
+  );
+  const styles = phaseStyles(phase);
+  const accent = market.accentColor?.trim() || undefined;
+
+  const clockLabel =
+    phase === "active"
+      ? getTimeRemaining(market.endsAt)
+      : phase === "waiting" && market.resultAt
+        ? timeUntil(market.resultAt, now)
+        : phase === "waiting"
+          ? "결과 일정 대기"
+          : "종료";
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "group w-full text-left p-4 md:p-5 rounded-xl border transition-all duration-300",
+        "hover:shadow-lg",
+        styles.card,
+        phase === "active" && "hover:bg-surface-elevated/80",
+      )}
+      style={
+        accent
+          ? {
+              borderColor:
+                phase === "active"
+                  ? `color-mix(in oklch, ${accent} 55%, transparent)`
+                  : phase === "waiting"
+                    ? `color-mix(in oklch, ${accent} 35%, transparent)`
+                    : undefined,
+              boxShadow:
+                phase === "active"
+                  ? `0 10px 30px -18px color-mix(in oklch, ${accent} 35%, transparent)`
+                  : undefined,
+            }
+          : undefined
+      }
+    >
+      {accent && phase !== "completed" && (
+        <div
+          className={cn(
+            "-mt-4 md:-mt-5 -mx-4 md:-mx-5 mb-3 h-1.5 rounded-t-xl opacity-90 transition-opacity duration-300",
+            phase === "waiting" && "opacity-70",
+          )}
+          style={{ backgroundColor: accent }}
+          aria-hidden="true"
+        />
+      )}
+      <div className="flex flex-col gap-2.5 mb-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex flex-wrap items-center gap-2 min-w-0">
+          <Badge
+            variant="outline"
+            className={cn(
+              "text-xs font-medium shrink-0",
+              categoryColors[market.category],
+              phase === "completed" && "opacity-95",
+            )}
+          >
+            {categoryLabels[market.category]}
+          </Badge>
+          {market.subCategoryLabel && market.subCategoryLabel !== "기타" && (
+            <Badge
+              variant="outline"
+              className={cn(
+                "text-[10px] font-bold px-2 py-0.5 border-border/60 bg-secondary/40 text-foreground/90",
+                phase === "completed" && "opacity-90",
+              )}
+              title={`세부 카테고리: ${market.subCategoryLabel}`}
+            >
+              {market.subCategoryLabel}
+            </Badge>
+          )}
+          {market.isOfficial && (
+            <span
+              className={cn(
+                "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-bold",
+                "bg-chart-5/10 text-chart-5 border-chart-5/25",
+                phase === "completed" && "opacity-90",
+              )}
+              title={market.officialAuthorName ?? "VOTERS 운영자"}
+            >
+              <CheckCircle2 className="size-3" aria-hidden />
+              운영자
+            </span>
+          )}
+          <Badge
+            className={cn(
+              "text-[10px] font-bold uppercase tracking-wide px-2 py-0.5",
+              styles.badge,
+            )}
+          >
+            {PHASE_LABEL[phase]}
+          </Badge>
+        </div>
+        <div
+          className={cn(
+            "flex items-center gap-1.5 text-xs tabular-nums shrink-0",
+            styles.clock,
+          )}
+        >
+          <Clock className="size-3.5 opacity-80" />
+          <span>{clockLabel}</span>
+        </div>
+      </div>
+
+      <h3
+        className={cn(
+          "text-base md:text-lg font-semibold leading-snug mb-4 line-clamp-2 transition-colors text-balance",
+          phase === "active" && "text-foreground group-hover:text-neon-blue",
+          phase === "waiting" && "text-foreground",
+          phase === "completed" && "text-muted-foreground group-hover:text-foreground/90",
+        )}
+      >
+        {market.question}
+      </h3>
+
+      <div className="space-y-2.5 mb-4">
+        {market.options.map((option) => {
+          const pct = market.totalPool > 0 ? option.percentage : 0;
+          return (
+            <div key={option.id} className="space-y-1">
+              <div className="flex items-center justify-between text-sm">
+                <span className="font-medium text-foreground">{option.label}</span>
+                <span
+                  className="font-semibold"
+                  style={{ color: option.color }}
+                >
+                  {pct}%
+                </span>
+              </div>
+              <div className="relative h-2 rounded-full overflow-hidden bg-secondary">
+                <div
+                  className="absolute inset-y-0 left-0 rounded-full transition-all duration-500"
+                  style={{
+                    width: `${pct}%`,
+                    backgroundColor: option.color,
+                  }}
+                />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div
+        className={cn(
+          "flex items-center justify-between text-xs text-muted-foreground pt-3 border-t",
+          phase === "waiting" ? "border-orange-500/25" : "border-border/50",
+          phase === "completed" && "border-border/40",
+        )}
+      >
+        <span className="font-medium text-foreground">
+          총 페블: {formatPool(market.totalPool)} P
+        </span>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1">
+            <Eye className="size-3.5" />
+            <span>{viewCount}</span>
+          </div>
+          <span
+            role="button"
+            tabIndex={0}
+            className={cn(
+              "inline-flex items-center gap-1 rounded-md px-2 py-1 transition-colors",
+              liked ? "bg-neon-red/10 text-neon-red" : "hover:bg-secondary"
+            )}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              const next = toggleLike(target, userId);
+              setLikeCount(next.count);
+              setLiked(next.liked);
+            }}
+            onKeyDown={(e) => {
+              if (e.key !== "Enter" && e.key !== " ") return;
+              e.preventDefault();
+              e.stopPropagation();
+              const next = toggleLike(target, userId);
+              setLikeCount(next.count);
+              setLiked(next.liked);
+            }}
+            aria-label="좋아요"
+          >
+            <Heart className={cn("size-3.5", liked ? "fill-current" : "")} />
+            <span>{likeCount}</span>
+          </span>
+          <div className="flex items-center gap-1">
+            <MessageCircle className="size-3.5" />
+            <span>{market.comments}</span>
+          </div>
+        </div>
+      </div>
+    </button>
+  );
+}
