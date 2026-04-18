@@ -57,6 +57,7 @@ export default function ProfilePage() {
   const [posts, setPosts] = useState<BoardPost[]>([]);
   const [comments, setComments] = useState<Comment[]>([]);
   const [myBetsCount, setMyBetsCount] = useState<number | null>(null);
+  const [myWaitingBetsCount, setMyWaitingBetsCount] = useState(0);
 
   const [pwdCurrent, setPwdCurrent] = useState("");
   const [pwdNew, setPwdNew] = useState("");
@@ -315,9 +316,14 @@ export default function ProfilePage() {
             <TabsTrigger value="comments" className="text-xs sm:text-sm min-h-[36px]">
               댓글 ({myComments.length})
             </TabsTrigger>
-            <TabsTrigger value="my-bets" className="text-xs sm:text-sm min-h-[36px]">
+            <TabsTrigger value="my-bets" className="relative text-xs sm:text-sm min-h-[36px]">
               내 보트
               {myBetsCount !== null ? ` (${myBetsCount})` : ""}
+              {myWaitingBetsCount > 0 && (
+                <span className="ml-1 inline-flex items-center justify-center rounded-full bg-amber-500 text-white text-[10px] font-bold min-w-[16px] h-4 px-1">
+                  {myWaitingBetsCount}
+                </span>
+              )}
             </TabsTrigger>
             {canChangePassword && (
               <TabsTrigger value="password" className="gap-0.5 text-xs sm:text-sm min-h-[36px]">
@@ -488,6 +494,7 @@ export default function ProfilePage() {
               userId={userId}
               variant="page"
               onMarketsLoaded={setMyBetsCount}
+              onWaitingCount={setMyWaitingBetsCount}
             />
           </TabsContent>
 

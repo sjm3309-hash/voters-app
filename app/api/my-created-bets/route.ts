@@ -38,7 +38,7 @@ export async function GET() {
       .from("bets")
       .select("*")
       .eq("user_id", user.id)
-      .order("created_at", { ascending: false });
+      .order("closing_at", { ascending: true });
 
     if (error) {
       return NextResponse.json(
