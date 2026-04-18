@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
-import { CheckCircle2, Clock, Eye, Heart, MessageCircle } from "lucide-react";
+import { CheckCircle2, Clock, Eye, ThumbsUp, MessageCircle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { CategoryId } from "./category-filter";
 import { getLikeCount, hasLiked, toggleLike } from "@/lib/likes";
@@ -419,8 +419,9 @@ export function MarketCard({ market, onClick, className }: MarketCardProps) {
               setLiked(next.liked);
             }}
             aria-label="좋아요"
+            title="좋아요"
           >
-            <Heart className={cn("size-3.5", liked ? "fill-current" : "")} />
+            <ThumbsUp className={cn("size-3.5", liked ? "fill-current" : "")} />
             <span>{likeCount}</span>
           </span>
           <div className="flex items-center gap-1">

@@ -16,6 +16,7 @@ import { ReportButton } from "@/components/report-button";
 import { DislikeButton } from "@/components/dislike-button";
 import { isAdminUserId } from "@/lib/admin";
 import { Trash2 } from "lucide-react";
+import { LikeButton } from "@/components/like-button";
 
 export type BoatCommentOptionWire = { id: string; label: string; color: string };
 
@@ -175,6 +176,12 @@ function CommentCard({
           </span>
           {commentId && !isDeleted && (
             <>
+              <LikeButton
+                targetType="boat_comment"
+                targetId={commentId}
+                canLike={canReport}
+                className="px-1.5 py-1 text-xs border-0 bg-transparent hover:bg-secondary/60 rounded-md h-auto font-normal"
+              />
               <DislikeButton targetType="boat_comment" targetId={commentId} canDislike={canReport} />
               <ReportButton targetType="boat_comment" targetId={commentId} canReport={canReport} />
               {currentUserId && (userId === currentUserId || isAdminUserId(currentUserId)) && onDelete && (

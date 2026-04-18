@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Clock, Eye, Flame, Heart, Loader2, MessageSquare, PenLine, Tag } from "lucide-react";
+import { Clock, Eye, Flame, ThumbsUp, Loader2, MessageSquare, PenLine, Tag } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { FilterId } from "@/components/category-filter";
 import {
@@ -196,8 +196,9 @@ function PostItem({
                 setLiked(next.liked);
               }}
               aria-label="좋아요"
+              title="좋아요"
             >
-              <Heart
+              <ThumbsUp
                 className={cn(
                   "size-3 shrink-0 opacity-70",
                   liked ? "fill-current text-neon-red opacity-100" : "",

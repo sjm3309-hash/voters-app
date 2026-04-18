@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeft, Award, CheckCircle2, Clock, Coins, ExternalLink, Eye, Heart, TrendingUp, Trophy, Users, X } from "lucide-react";
+import { ArrowLeft, Award, CheckCircle2, Clock, Coins, ExternalLink, Eye, ThumbsUp, TrendingUp, Trophy, Users, X } from "lucide-react";
 import { ReportButton } from "@/components/report-button";
 import { DislikeButton } from "@/components/dislike-button";
 import { Navbar } from "@/components/navbar";
@@ -1034,8 +1034,9 @@ export default function MarketDetailPage() {
                       }
                     }}
                     aria-label="좋아요"
+                    title="좋아요"
                   >
-                    <Heart className={cn("size-4", liked ? "fill-current" : "")} />
+                    <ThumbsUp className={cn("size-4", liked ? "fill-current" : "")} />
                     <span>{likeCount}</span>
                   </button>
                   <DislikeButton

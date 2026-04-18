@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeft, CornerDownRight, Eye, Heart, Loader2, MessageSquare, Pencil, Tag, Trash2 } from "lucide-react";
+import { ArrowLeft, CornerDownRight, Eye, ThumbsUp, Loader2, MessageSquare, Pencil, Tag, Trash2 } from "lucide-react";
 import { Navbar } from "@/components/navbar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -24,6 +24,7 @@ import { AuthorLevelIcon } from "@/components/level-icon";
 import { isAdminUserId } from "@/lib/admin";
 import { ReportButton } from "@/components/report-button";
 import { DislikeButton } from "@/components/dislike-button";
+import { LikeButton } from "@/components/like-button";
 
 const AD_COMMENT_SLOT = process.env.NEXT_PUBLIC_AD_SLOT_COMMENT ?? "1111111111";
 import { safeReturnPath } from "@/lib/board-navigation";
@@ -488,8 +489,9 @@ export default function BoardPostPage() {
                   setLiked(next.liked);
                 }}
                 aria-label="좋아요"
+                title="좋아요"
               >
-                <Heart className={cn("size-4", liked ? "fill-current" : "")} />
+                <ThumbsUp className={cn("size-4", liked ? "fill-current" : "")} />
                 <span className="text-sm font-medium">{likeCount}</span>
               </button>
               <DislikeButton
@@ -624,6 +626,14 @@ export default function BoardPostPage() {
                           </div>
                         </div>
                         <div className="flex items-center gap-0.5 shrink-0">
+                          {!c.isDeleted && (
+                            <LikeButton
+                              targetType="board_comment"
+                              targetId={c.id}
+                              canLike={canComment}
+                              className="px-1.5 py-1 text-xs border-0 bg-transparent hover:bg-secondary/60 rounded-md h-auto font-normal"
+                            />
+                          )}
                           {!c.isDeleted && <DislikeButton targetType="board_comment" targetId={c.id} canDislike={canComment} />}
                           {canComment && !c.isDeleted && (
                             <button
@@ -722,6 +732,14 @@ export default function BoardPostPage() {
                                 </div>
                               </div>
                               <div className="flex items-center gap-0.5 shrink-0">
+                                {!reply.isDeleted && (
+                                  <LikeButton
+                                    targetType="board_comment"
+                                    targetId={reply.id}
+                                    canLike={canComment}
+                                    className="px-1.5 py-1 text-xs border-0 bg-transparent hover:bg-secondary/60 rounded-md h-auto font-normal"
+                                  />
+                                )}
                                 {!reply.isDeleted && <DislikeButton targetType="board_comment" targetId={reply.id} canDislike={canComment} />}
                                 {!reply.isDeleted && <ReportButton targetType="board_comment" targetId={reply.id} canReport={canComment} />}
                                 {!reply.isDeleted && currentUserId && (reply.authorId === currentUserId || isAdminUserId(currentUserId)) && (
