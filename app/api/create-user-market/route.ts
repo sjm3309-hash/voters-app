@@ -63,11 +63,13 @@ export async function POST(request: Request) {
 
     const {
       question,
+      description,
       dbCategory,
       subCategory,
       closingAtIso,
       accentColor,
       optionsForDb,
+      resolver,
     } = parsed.data;
 
     const authorName =
@@ -133,6 +135,7 @@ export async function POST(request: Request) {
     const row = {
       external_id: externalId,
       title: question.slice(0, 500),
+      description: description || null,
       closing_at: closingAtIso,
       confirmed_at: null as string | null,
       user_id: user.id,
@@ -144,6 +147,7 @@ export async function POST(request: Request) {
       options: optionsPayload,
       is_admin_generated: false,
       author_name: authorName.slice(0, 120),
+      resolver: resolver || null,
     };
 
     const { data, error } = await supabase.from("bets").insert(row).select("id").single();

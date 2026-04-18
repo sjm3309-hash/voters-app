@@ -492,11 +492,13 @@ function CreateMarketPageInner() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           question: question.trim(),
+          description: description.trim() || undefined,
           category,
           subCategory,
           endsAt: kstToUtcISO(endsDate, endsTime),
           resultAt: kstToUtcISO(resultDate, resultTime),
           options: filled.map((o) => ({ label: o.label.trim(), color: o.color })),
+          resolver: resolver.trim() || undefined,
         }),
       });
       const j = (await res.json().catch(() => ({}))) as {

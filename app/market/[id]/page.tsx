@@ -296,6 +296,8 @@ function feedWireToMarketDetail(w: BetFeedMarketWire): MarketDetail {
     winningOptionId: w.winningOptionId,
     confirmedAt: w.confirmedAt,
     status: w.status,
+    description: w.description ?? "",
+    resolver: w.resolver ?? (w.isOfficial ? "공식 경기·운영 기준" : "작성자·운영자 판단"),
   };
 }
 
@@ -1056,9 +1058,11 @@ export default function MarketDetailPage() {
                 className="mb-3"
               />
 
-              <p className="text-sm text-muted-foreground mb-4">
-                {market.description}
-              </p>
+              {market.description && (
+                <p className="text-sm text-muted-foreground mb-4 whitespace-pre-line leading-relaxed">
+                  {market.description}
+                </p>
+              )}
 
               <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground pt-4 border-t border-border/50">
                 <div className="flex items-center gap-1.5">
@@ -1102,10 +1106,12 @@ export default function MarketDetailPage() {
                     </span>
                   </div>
                 )}
-                <div className="flex items-center gap-1.5">
-                  <ExternalLink className="size-3.5" />
-                  <span>정산: {market.resolver}</span>
-                </div>
+                {market.resolver && (
+                  <div className="flex items-center gap-1.5">
+                    <ExternalLink className="size-3.5" />
+                    <span>정산: {market.resolver}</span>
+                  </div>
+                )}
               </div>
             </div>
 

@@ -9,11 +9,13 @@ export type CreateUserMarketFieldError = {
 
 export type CreateUserMarketBodyIn = {
   question?: string;
+  description?: string;
   category?: string;
   subCategory?: string;
   endsAt?: string;
   resultAt?: string;
   options?: { label?: string; color?: string }[];
+  resolver?: string;
 };
 
 function parseIsoMs(v: string): number {
@@ -59,6 +61,7 @@ export function validateCreateUserMarketBody(body: CreateUserMarketBodyIn): {
   ok: true;
   data: {
     question: string;
+    description: string;
     categoryId: string;
     dbCategory: string;
     subCategory: string;
@@ -69,11 +72,14 @@ export function validateCreateUserMarketBody(body: CreateUserMarketBodyIn): {
     optionsForDb: { label: string; color: string }[];
     /** DB `bets.color` — 카드 강조용(첫 선택지 색) */
     accentColor: string;
+    resolver: string;
   };
 } | { ok: false; errors: CreateUserMarketFieldError[] } {
   const errors: CreateUserMarketFieldError[] = [];
 
-  const question = String(body.question ?? "").trim();
+  const question    = String(body.question    ?? "").trim();
+  const description = String(body.description ?? "").trim().slice(0, 500);
+  const resolver    = String(body.resolver    ?? "").trim().slice(0, 100);
   if (question.length < 5) {
     errors.push({ field: "question", code: "too_short", message: "질문은 5자 이상이어야 합니다." });
   }
@@ -158,6 +164,7 @@ export function validateCreateUserMarketBody(body: CreateUserMarketBodyIn): {
     ok: true,
     data: {
       question,
+      description,
       categoryId: category,
       dbCategory: marketCategoryIdToDbLabel(category),
       subCategory,
@@ -166,6 +173,7 @@ export function validateCreateUserMarketBody(body: CreateUserMarketBodyIn): {
       optionLabels: optOk.rows.map((r) => r.label),
       accentColor,
       optionsForDb,
+      resolver,
     },
   };
 }

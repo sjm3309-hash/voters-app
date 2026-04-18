@@ -53,6 +53,10 @@ export type BetFeedMarketWire = {
   confirmedAt?: string;
   /** DB `status` — settled / refunded / cancelled 등 */
   status?: string;
+  /** 보트 상세 설명 */
+  description?: string;
+  /** 정산 기준 */
+  resolver?: string;
 };
 
 export function betRowToFeedWire(
@@ -90,6 +94,8 @@ export function betRowToFeedWire(
         ? new Date(row.confirmed_at as string).toISOString()
         : undefined,
     status: row.status ?? undefined,
+    description: row.description ? String(row.description).trim() || undefined : undefined,
+    resolver: row.resolver ? String(row.resolver).trim() || undefined : undefined,
   };
 }
 

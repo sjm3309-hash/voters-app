@@ -26,6 +26,10 @@ export type BetRowPublic = {
   author_name?: string | null;
   /** 정산 확정 시 클라이언트 옵션 id */
   winning_option_id?: string | null;
+  /** 보트 상세 설명 */
+  description?: string | null;
+  /** 정산 기준 */
+  resolver?: string | null;
 };
 
 /** betRowToMarket 결과 — UI·API 응답 확장 필드 포함 */
