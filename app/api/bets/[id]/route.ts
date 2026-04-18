@@ -112,7 +112,28 @@ export async function GET(
       }
     }
 
+    // 실제 댓글 수 집계 (is_deleted 컬럼 없는 DB도 처리)
+    let commentCount = 0;
+    const cResult = await supabase
+      .from("boat_comments")
+      .select("id")
+      .eq("bet_id", trimmed)
+      .eq("is_deleted", false);
+    if (!cResult.error && cResult.data) {
+      commentCount = cResult.data.length;
+    } else {
+      // is_deleted 컬럼 없는 경우 fallback (마이그레이션 전 DB)
+      const cFallback = await supabase
+        .from("boat_comments")
+        .select("id")
+        .eq("bet_id", trimmed);
+      if (!cFallback.error && cFallback.data) {
+        commentCount = cFallback.data.length;
+      }
+    }
+
     const market = betRowToFeedWire(row, pool, optionTotals);
+    market.comments = commentCount;
     return NextResponse.json(
       { ok: true, market, optionTotals, myOptionTotals },
       { headers: NO_STORE_HEADERS },

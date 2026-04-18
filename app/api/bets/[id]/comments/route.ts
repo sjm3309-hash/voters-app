@@ -82,11 +82,31 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
       flavor,
     );
 
-    const { data: rows, error: cErr } = await svc
+    // is_deleted 컬럼이 있으면 포함, 없어도 동작하도록 두 번 시도
+    let rows: Record<string, unknown>[] | null = null;
+    let cErr: { message: string } | null = null;
+
+    const withDeleted = await svc
       .from("boat_comments")
       .select("id, user_id, author_display, content, created_at, is_deleted")
       .eq("bet_id", trimmed)
       .order("created_at", { ascending: true });
+
+    if (withDeleted.error) {
+      // is_deleted 컬럼이 없는 경우 fallback
+      const withoutDeleted = await svc
+        .from("boat_comments")
+        .select("id, user_id, author_display, content, created_at")
+        .eq("bet_id", trimmed)
+        .order("created_at", { ascending: true });
+      if (withoutDeleted.error) {
+        cErr = withoutDeleted.error;
+      } else {
+        rows = (withoutDeleted.data ?? []) as Record<string, unknown>[];
+      }
+    } else {
+      rows = (withDeleted.data ?? []) as Record<string, unknown>[];
+    }
 
     /** 테이블 미생성·스키마 불일치여도 스테이크 조회는 성공시키고 댓글만 비움 */
     const commentsDbSkipped = Boolean(cErr);

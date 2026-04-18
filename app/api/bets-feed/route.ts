@@ -168,11 +168,41 @@ export async function GET(request: Request) {
     const pageRows = sortedFull.slice(offset, offset + limit);
     const hasMore = offset + pageRows.length < totalSorted;
 
+    // 페이지에 포함된 보트들의 댓글 수 한 번에 집계
+    const pageIds = pageRows.map((r) => r.id).filter(Boolean);
+    const commentCountById = new Map<string, number>();
+    if (pageIds.length > 0) {
+      const cResult = await supabase
+        .from("boat_comments")
+        .select("bet_id")
+        .in("bet_id", pageIds)
+        .eq("is_deleted", false);
+      const cRows = cResult.error ? null : cResult.data;
+      if (cRows) {
+        for (const r of cRows as { bet_id: string }[]) {
+          commentCountById.set(r.bet_id, (commentCountById.get(r.bet_id) ?? 0) + 1);
+        }
+      } else {
+        // is_deleted 컬럼 없는 경우 fallback (마이그레이션 전 DB)
+        const cFallback = await supabase
+          .from("boat_comments")
+          .select("bet_id")
+          .in("bet_id", pageIds);
+        if (!cFallback.error && cFallback.data) {
+          for (const r of cFallback.data as { bet_id: string }[]) {
+            commentCountById.set(r.bet_id, (commentCountById.get(r.bet_id) ?? 0) + 1);
+          }
+        }
+      }
+    }
+
     const markets = pageRows.map((r) => {
       const row = r as BetRowPublic;
       const pool = poolBy.get(row.id) ?? 0;
       const stakes = stakesByMarket.get(row.id);
-      return betRowToFeedWire(row, pool, stakes);
+      const wire = betRowToFeedWire(row, pool, stakes);
+      wire.comments = commentCountById.get(row.id) ?? 0;
+      return wire;
     });
 
     return NextResponse.json(

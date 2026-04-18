@@ -532,7 +532,7 @@ export function BoatCommentsSection({
     <div className="flex flex-col flex-1 min-h-0">
       <div className="flex items-center justify-between gap-3">
         <div className="text-sm font-semibold text-foreground">
-          댓글 <span className="text-muted-foreground">({listForRender.length})</span>
+          댓글 <span className="text-muted-foreground">({listForRender.filter((c) => !("isDeleted" in c && c.isDeleted)).length})</span>
         </div>
       </div>
 
