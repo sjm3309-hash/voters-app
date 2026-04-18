@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeft, CornerDownRight, Eye, ThumbsUp, Loader2, MessageSquare, Pencil, Tag, Trash2 } from "lucide-react";
+import { ArrowLeft, CornerDownRight, Eye, Loader2, MessageSquare, Pencil, Tag, Trash2 } from "lucide-react";
 import { Navbar } from "@/components/navbar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,7 +13,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { type BoardPost } from "@/lib/board";
 import type { PostComment } from "@/app/api/post-comments/route";
-import { getLikeCount, hasLiked, toggleLike } from "@/lib/likes";
 import { sanitizeHtml } from "@/lib/sanitize-html";
 import { useUserPointsBalance } from "@/lib/points";
 import { checkAndGrantCommentReward } from "@/lib/daily-rewards";
@@ -216,28 +215,6 @@ export default function BoardPostPage() {
   }, [id]);
 
   const canComment = userId !== "anon" && !!currentUserId;
-  const likeUserId = userId !== "anon" ? userId : "anon";
-  const likeTarget = useMemo(() => ({ type: "post" as const, id }), [id]);
-  const [likeCount, setLikeCount] = useState<number>(0);
-  const [liked, setLiked] = useState<boolean>(false);
-
-  useEffect(() => {
-    setLikeCount(getLikeCount(likeTarget));
-    setLiked(hasLiked(likeTarget, likeUserId));
-  }, [likeTarget, likeUserId]);
-
-  useEffect(() => {
-    const onLikesUpdated = () => {
-      setLikeCount(getLikeCount(likeTarget));
-      setLiked(hasLiked(likeTarget, likeUserId));
-    };
-    window.addEventListener("voters:likesUpdated", onLikesUpdated as EventListener);
-    window.addEventListener("storage", onLikesUpdated as EventListener);
-    return () => {
-      window.removeEventListener("voters:likesUpdated", onLikesUpdated as EventListener);
-      window.removeEventListener("storage", onLikesUpdated as EventListener);
-    };
-  }, [likeTarget, likeUserId]);
 
   useEffect(() => {
     if (!post) return;
@@ -477,23 +454,11 @@ export default function BoardPostPage() {
                 {post.commentCount}
               </span>
               <span>·</span>
-              <button
-                type="button"
-                className={cn(
-                  "inline-flex items-center gap-1 rounded-md px-2 py-1 transition-colors",
-                  liked ? "bg-neon-red/10 text-neon-red" : "hover:bg-secondary"
-                )}
-                onClick={() => {
-                  const next = toggleLike(likeTarget, likeUserId);
-                  setLikeCount(next.count);
-                  setLiked(next.liked);
-                }}
-                aria-label="좋아요"
-                title="좋아요"
-              >
-                <ThumbsUp className={cn("size-4", liked ? "fill-current" : "")} />
-                <span className="text-sm font-medium">{likeCount}</span>
-              </button>
+              <LikeButton
+                targetType="board_post"
+                targetId={id}
+                canLike={canComment}
+              />
               <DislikeButton
                 targetType="board_post"
                 targetId={id}

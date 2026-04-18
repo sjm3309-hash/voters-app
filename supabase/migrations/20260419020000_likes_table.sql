@@ -1,5 +1,7 @@
--- 댓글 좋아요 테이블 (dislikes와 동일한 구조)
-CREATE TABLE IF NOT EXISTS public.likes (
+-- 댓글 좋아요 테이블 — 기존 테이블이 있어도 안전하게 처리
+DROP TABLE IF EXISTS public.likes CASCADE;
+
+CREATE TABLE public.likes (
   id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id     uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   target_type text NOT NULL,
