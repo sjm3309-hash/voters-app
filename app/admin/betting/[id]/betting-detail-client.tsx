@@ -3,9 +3,17 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Loader2, Trophy, User, AlertOctagon } from "lucide-react";
+import { ArrowLeft, Loader2, Trophy, Trash2, User, AlertOctagon } from "lucide-react";
 import { Navbar } from "@/components/navbar";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { useIsAdmin } from "@/hooks/use-is-admin";
 import { useUserPointsBalance } from "@/lib/points";
 import { UserModerationPanel } from "@/components/admin/UserModerationPanel";
@@ -53,6 +61,9 @@ export function BettingDetailClient() {
   const [settleErr, setSettleErr] = useState<string | null>(null);
   const [cancelling, setCancelling] = useState(false);
   const [cancelMsg, setCancelMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteErr, setDeleteErr] = useState<string | null>(null);
 
   useEffect(() => {
     if (adminLoading) return;
@@ -114,6 +125,26 @@ export function BettingDetailClient() {
     }
   }
 
+  async function handleDelete() {
+    if (!id) return;
+    setDeleting(true);
+    setDeleteErr(null);
+    try {
+      const res = await fetch(`/api/admin/bets/${encodeURIComponent(id)}/delete`, {
+        method: "POST",
+        credentials: "same-origin",
+      });
+      const j = (await res.json().catch(() => ({}))) as { ok?: boolean; message?: string; error?: string };
+      if (!res.ok || !j.ok) throw new Error(j.error || res.statusText);
+      setDeleteDialogOpen(false);
+      router.replace("/admin/betting");
+    } catch (e) {
+      setDeleteErr(e instanceof Error ? e.message : "삭제 실패");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   async function handleCancel() {
     if (!id || !window.confirm("이 보트를 취소하고 모든 참여자에게 페블을 환불하시겠습니까?\n이 작업은 되돌릴 수 없습니다.")) return;
     setCancelling(true);
@@ -137,6 +168,52 @@ export function BettingDetailClient() {
   return (
     <div className="min-h-screen bg-background">
       <Navbar balance={balance} userId={userId} />
+
+      {/* 삭제 확인 다이얼로그 */}
+      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="text-destructive flex items-center gap-2">
+              <Trash2 className="size-5" />
+              보트 삭제
+            </DialogTitle>
+            <DialogDescription className="pt-1 space-y-1">
+              <span className="block font-semibold text-foreground">
+                &ldquo;{market?.question}&rdquo;
+              </span>
+              <span className="block">
+                이 보트와 관련된 <strong>모든 베팅 기록, 댓글</strong>이 영구 삭제됩니다.
+                <br />이 작업은 <strong>되돌릴 수 없습니다.</strong>
+              </span>
+            </DialogDescription>
+          </DialogHeader>
+          {deleteErr && (
+            <p className="text-sm text-destructive rounded-md bg-destructive/10 px-3 py-2">
+              {deleteErr}
+            </p>
+          )}
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setDeleteDialogOpen(false)}
+              disabled={deleting}
+            >
+              취소
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => void handleDelete()}
+              disabled={deleting}
+            >
+              {deleting ? (
+                <><Loader2 className="size-4 animate-spin mr-1" />삭제 중…</>
+              ) : (
+                <><Trash2 className="size-4 mr-1" />영구 삭제</>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <div className="border-b border-border/50 bg-background/80 backdrop-blur-sm sticky top-0 z-10">
         <div className="max-w-5xl mx-auto px-4 py-3 flex items-center gap-3">
           <button
@@ -187,6 +264,16 @@ export function BettingDetailClient() {
                     {cancelling ? "취소 중…" : "보트 중지 + 전액 환불"}
                   </Button>
                 )}
+                {/* 삭제 버튼 */}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 text-xs border-destructive/50 text-destructive hover:bg-destructive/10"
+                  onClick={() => setDeleteDialogOpen(true)}
+                >
+                  <Trash2 className="size-3 mr-1" />
+                  보트 삭제
+                </Button>
               </div>
               {cancelMsg && (
                 <p className={cn("text-xs px-3 py-2 rounded-lg mt-1", cancelMsg.ok ? "bg-emerald-500/10 text-emerald-600" : "bg-red-500/10 text-red-500")}>

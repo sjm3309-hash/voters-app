@@ -943,15 +943,26 @@ export default function MarketDetailPage() {
 
           {/* Content */}
           <div className="min-w-0">
-            {/* Back Button */}
-            <button
-              type="button"
-              onClick={() => router.push(listHref)}
-              className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors mb-6"
-            >
-              <ArrowLeft className="size-4" />
-              <span className="text-sm">보트 목록으로</span>
-            </button>
+            {/* Back Button + 운영자 관리 버튼 */}
+            <div className="flex items-center justify-between mb-6">
+              <button
+                type="button"
+                onClick={() => router.push(listHref)}
+                className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <ArrowLeft className="size-4" />
+                <span className="text-sm">보트 목록으로</span>
+              </button>
+              {isAdmin && (
+                <Link
+                  href={`/admin/betting/${marketId}`}
+                  className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-chart-5/40 text-chart-5 hover:bg-chart-5/10 transition-colors font-medium"
+                >
+                  <ExternalLink className="size-3.5" />
+                  관리자 상세 페이지
+                </Link>
+              )}
+            </div>
 
             {/* Two Column Layout */}
             <div className="flex flex-col lg:flex-row gap-6 items-stretch">
