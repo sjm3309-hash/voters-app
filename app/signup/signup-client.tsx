@@ -65,11 +65,6 @@ export function SignupClient() {
     });
   }, []);
 
-  // ── 이메일 포커스 아웃 시 간단 중복 체크 ─────────────────────
-  // Supabase는 클라이언트에서 직접 중복 이메일 조회가 불가해
-  // 실제 중복 여부는 2단계 가입 완료 시 서버 에러로 확인됩니다.
-  // 닉네임 중복 체크도 동일 — profiles 테이블 연동 시 정확히 사전 확인 가능.
-
   // ── 1단계: 유효성 검사 + OTP 발송 ────────────────────────────
   async function handleSendOtp(e: React.FormEvent) {
     e.preventDefault();
@@ -86,6 +81,21 @@ export function SignupClient() {
 
     setLoading(true);
     try {
+      // 닉네임 중복 + 예약어 서버 체크 (OTP 발송 전)
+      const checkRes = await fetch(
+        `/api/user/check-nickname?nickname=${encodeURIComponent(nickname.trim())}`,
+      );
+      const checkJson = (await checkRes.json().catch(() => ({}))) as {
+        ok?: boolean;
+        available?: boolean;
+        error?: string;
+      };
+      if (!checkJson.available) {
+        setNicknameError(checkJson.error ?? "사용할 수 없는 닉네임입니다.");
+        setLoading(false);
+        return;
+      }
+
       const { error } = await supabase.auth.signInWithOtp({ phone: e164 });
       if (error) throw error;
       setStep(2);

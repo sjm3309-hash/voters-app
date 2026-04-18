@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/utils/supabase/server";
 import { createServiceRoleClient } from "@/utils/supabase/service-role";
+import { isReservedNickname } from "@/lib/nickname-rules";
+import { isAdminEmail } from "@/lib/admin";
 
 export const dynamic = "force-dynamic";
 
@@ -25,9 +27,18 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: false, error: "로그인이 필요합니다." }, { status: 401 });
     }
 
+    // 예약어 체크 — 운영자가 아닌 경우에만 차단
+    const userIsAdmin = isAdminEmail(user.email);
+    if (!userIsAdmin && isReservedNickname(nickname)) {
+      return NextResponse.json(
+        { ok: false, error: "사용할 수 없는 닉네임입니다." },
+        { status: 400 },
+      );
+    }
+
     const svc = createServiceRoleClient();
 
-    // 중복 닉네임 체크 (현재 유저 제외)
+    // 중복 닉네임 체크 (현재 유저 제외, 대소문자 무시)
     const { data: existing } = await svc
       .from("profiles")
       .select("id")

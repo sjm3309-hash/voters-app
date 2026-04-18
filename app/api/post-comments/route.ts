@@ -29,15 +29,49 @@ function rowToComment(row: Record<string, unknown>): PostComment {
   };
 }
 
-// ─── GET: 특정 게시글의 댓글 목록 (트리 구조로 반환) ─────────────────────────
+// ─── GET: 특정 게시글의 댓글 목록 or 특정 유저의 댓글 전체 ──────────────────
 export async function GET(request: Request) {
   try {
     const url = new URL(request.url);
     const postId = url.searchParams.get("postId");
+    const authorId = url.searchParams.get("authorId");
+    const limitRaw = parseInt(url.searchParams.get("limit") ?? "100", 10);
+    const limit = Number.isFinite(limitRaw) && limitRaw >= 1 && limitRaw <= 200 ? limitRaw : 100;
+
+    // authorId 모드: 특정 유저의 댓글 전체 (프로필/관리자용)
+    if (authorId && !postId) {
+      const supabase = createServiceRoleClient();
+      const { data, error } = await supabase
+        .from("post_comments")
+        .select("*, board_posts(title)")
+        .eq("author_id", authorId)
+        .eq("is_deleted", false)
+        .order("created_at", { ascending: false })
+        .limit(limit);
+
+      if (error) {
+        console.error("[post-comments GET authorId]", error);
+        return NextResponse.json(
+          { ok: false, error: "query_failed", message: error.message },
+          { status: 500 },
+        );
+      }
+
+      const comments = (Array.isArray(data) ? data : []).map((r) => {
+        const c = rowToComment(r as Record<string, unknown>);
+        const postTitle =
+          r.board_posts && typeof (r.board_posts as Record<string, unknown>).title === "string"
+            ? (r.board_posts as Record<string, unknown>).title as string
+            : undefined;
+        return { ...c, postTitle };
+      });
+
+      return NextResponse.json({ ok: true, comments });
+    }
 
     if (!postId) {
       return NextResponse.json(
-        { ok: false, error: "missing_post_id", message: "postId가 필요합니다." },
+        { ok: false, error: "missing_post_id", message: "postId 또는 authorId가 필요합니다." },
         { status: 400 },
       );
     }

@@ -21,17 +21,49 @@ export const SUBCATEGORIES: Record<string, SubCategoryItem[]> = {
     { id: "other",     label: "기타" },
   ],
   stocks: [
-    { id: "domestic", label: "국내" },
-    { id: "overseas", label: "해외" },
+    { id: "domestic", label: "국내주식" },
+    { id: "overseas", label: "해외주식" },
     { id: "other",    label: "기타" },
   ],
   politics: [
-    { id: "domestic", label: "국내" },
-    { id: "overseas", label: "해외" },
+    { id: "domestic", label: "국내정치" },
+    { id: "overseas", label: "해외정치" },
     { id: "other",    label: "기타" },
   ],
   // fun, crypto → 세부 카테고리 없음
 };
+
+/**
+ * 서브카테고리 ID → DB 저장용 한국어/표준 라벨 변환
+ * (카테고리에 따라 동일 ID(domestic/overseas)가 다른 값으로 저장)
+ */
+export function subCategoryIdToDbLabel(categoryId: string, subCategoryId: string): string {
+  const map: Record<string, Record<string, string>> = {
+    sports: {
+      baseball_kr: "국내야구",
+      football:    "해외축구",
+      basketball:  "농구",
+      other:       "기타",
+    },
+    game: {
+      lol:       "LoL",
+      valorant:  "발로란트",
+      starcraft: "스타크래프트",
+      other:     "기타",
+    },
+    stocks: {
+      domestic: "국내주식",
+      overseas: "해외주식",
+      other:    "기타",
+    },
+    politics: {
+      domestic: "국내정치",
+      overseas: "해외정치",
+      other:    "기타",
+    },
+  };
+  return (map[categoryId]?.[subCategoryId] ?? subCategoryId) || "기타";
+}
 
 /** 해당 카테고리에 세부 카테고리가 있는지 여부 */
 export function hasSubCategories(categoryId: string): boolean {

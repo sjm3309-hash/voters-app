@@ -39,8 +39,8 @@ import {
   levelLabelTrackingClassName,
 } from "@/lib/level-system";
 import { getUpgradeCost, getDailyReward } from "@/lib/levelConfig";
-import { loadBoardPosts, type BoardPost } from "@/lib/board";
-import { loadComments, type Comment } from "@/lib/comments";
+import type { BoardPost } from "@/lib/board";
+import type { Comment } from "@/lib/comments";
 import { createClient } from "@/utils/supabase/client";
 import { isAdminEmail } from "@/lib/admin";
 import { cn } from "@/lib/utils";
@@ -57,7 +57,9 @@ export default function ProfilePage() {
   const [canChangePassword, setCanChangePassword] = useState(false);
 
   const [posts, setPosts] = useState<BoardPost[]>([]);
-  const [comments, setComments] = useState<Comment[]>([]);
+  const [postsLoading, setPostsLoading] = useState(false);
+  const [comments, setComments] = useState<(Comment & { postTitle?: string })[]>([]);
+  const [commentsLoading, setCommentsLoading] = useState(false);
   const [myBetsCount, setMyBetsCount] = useState<number | null>(null);
   const [myWaitingBetsCount, setMyWaitingBetsCount] = useState(0);
 
@@ -109,22 +111,40 @@ export default function ProfilePage() {
       void loadUser();
     });
 
-    const syncPostsComments = () => {
-      setPosts(loadBoardPosts());
-      setComments(loadComments());
-    };
-    syncPostsComments();
-
-    window.addEventListener("voters:postsUpdated", syncPostsComments as EventListener);
-    window.addEventListener("voters:commentsUpdated", syncPostsComments as EventListener);
-    window.addEventListener("storage", syncPostsComments);
     return () => {
       sub.subscription.unsubscribe();
-      window.removeEventListener("voters:postsUpdated", syncPostsComments as EventListener);
-      window.removeEventListener("voters:commentsUpdated", syncPostsComments as EventListener);
-      window.removeEventListener("storage", syncPostsComments);
     };
   }, []);
+
+  // DB에서 내 게시글 로드
+  useEffect(() => {
+    if (!userId || userId === "anon") return;
+    setPostsLoading(true);
+    void fetch(`/api/board-posts?authorId=${encodeURIComponent(userId)}&limit=100`, {
+      credentials: "same-origin",
+    })
+      .then((r) => r.json())
+      .then((j: { ok?: boolean; posts?: BoardPost[] }) => {
+        if (j.ok && Array.isArray(j.posts)) setPosts(j.posts);
+      })
+      .catch(() => null)
+      .finally(() => setPostsLoading(false));
+  }, [userId]);
+
+  // DB에서 내 댓글 로드
+  useEffect(() => {
+    if (!userId || userId === "anon") return;
+    setCommentsLoading(true);
+    void fetch(`/api/post-comments?authorId=${encodeURIComponent(userId)}&limit=100`, {
+      credentials: "same-origin",
+    })
+      .then((r) => r.json())
+      .then((j: { ok?: boolean; comments?: (Comment & { postTitle?: string })[] }) => {
+        if (j.ok && Array.isArray(j.comments)) setComments(j.comments);
+      })
+      .catch(() => null)
+      .finally(() => setCommentsLoading(false));
+  }, [userId]);
 
   // DB에서 레벨 로드
   useEffect(() => {
@@ -195,25 +215,16 @@ export default function ProfilePage() {
     })();
   };
 
-  const myPosts = useMemo(() => {
-    if (!userName) return [];
-    return posts
-      .filter((p) => p.author === userName)
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-  }, [posts, userName]);
+  // API가 이미 authorId로 필터링해서 반환하므로 추가 필터링 불필요
+  const myPosts = useMemo(
+    () => [...posts].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
+    [posts],
+  );
 
-  const postTitleById = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const p of posts) map.set(p.id, p.title);
-    return map;
-  }, [posts]);
-
-  const myComments = useMemo(() => {
-    if (!userName) return [];
-    return comments
-      .filter((c) => c.author === userName)
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-  }, [comments, userName]);
+  const myComments = useMemo(
+    () => [...comments].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
+    [comments],
+  );
 
   const openEditDialog = () => {
     setEditNickname(userName);
@@ -506,7 +517,11 @@ export default function ProfilePage() {
 
           <TabsContent value="posts" className="mt-4">
             <div className="max-h-[60vh] space-y-2 overflow-auto pr-1">
-              {myPosts.length === 0 ? (
+              {postsLoading ? (
+                <div className="flex justify-center py-10">
+                  <Loader2 className="size-5 animate-spin text-muted-foreground" />
+                </div>
+              ) : myPosts.length === 0 ? (
                 <p className="py-10 text-center text-sm text-muted-foreground">아직 작성한 글이 없습니다.</p>
               ) : (
                 myPosts.map((p) => (
@@ -527,7 +542,11 @@ export default function ProfilePage() {
 
           <TabsContent value="comments" className="mt-4">
             <div className="max-h-[60vh] space-y-2 overflow-auto pr-1">
-              {myComments.length === 0 ? (
+              {commentsLoading ? (
+                <div className="flex justify-center py-10">
+                  <Loader2 className="size-5 animate-spin text-muted-foreground" />
+                </div>
+              ) : myComments.length === 0 ? (
                 <p className="py-10 text-center text-sm text-muted-foreground">아직 작성한 댓글이 없습니다.</p>
               ) : (
                 myComments.map((c) => (
@@ -539,7 +558,7 @@ export default function ProfilePage() {
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <div className="mb-0.5 line-clamp-1 text-xs text-muted-foreground">
-                          {postTitleById.get(c.postId) ?? "게시글"}
+                          {(c as { postTitle?: string }).postTitle ?? "게시글"}
                         </div>
                         <div className="line-clamp-2 text-sm text-foreground/90">{c.content}</div>
                       </div>

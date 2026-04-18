@@ -143,68 +143,69 @@ function CommentCard({
 
   return (
     <div
-      className="rounded-lg border border-border/50 px-4 py-3 transition-colors duration-200"
+      className="rounded-lg border border-border/50 px-2.5 py-2 sm:px-4 sm:py-3 transition-colors duration-200"
       style={cardBg ? { backgroundColor: cardBg } : undefined}
     >
       {/* 작성자 + 시간 */}
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0">
+      <div className="flex items-start justify-between gap-1.5">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-baseline gap-x-1 gap-y-0">
             <AdminAuthorBadge
               name={author}
               userId={userId}
-              iconSize={13}
-              className={cn("text-sm font-semibold", !ink && "text-foreground")}
+              iconSize={12}
+              className={cn("text-xs font-semibold sm:text-sm", !ink && "text-foreground")}
               inkColor={ink ?? undefined}
             />
             {stake != null && stake.totalAmount > 0 && (
-              <span className="text-xs text-gray-500 dark:text-gray-400 tabular-nums">
+              <span className="text-[10px] text-gray-500 dark:text-gray-400 tabular-nums">
                 ({stake.totalAmount.toLocaleString()}P)
               </span>
             )}
           </div>
           {betSummary && (
-            <div className="mt-0.5 text-[11px] text-muted-foreground truncate">
+            <div className="mt-0.5 text-[10px] text-muted-foreground truncate">
               {betSummary}
             </div>
           )}
         </div>
-        <span className="text-[11px] text-muted-foreground tabular-nums shrink-0">
+        <span className="text-[10px] text-muted-foreground tabular-nums shrink-0">
           {new Date(createdAt).toLocaleString("ko-KR")}
         </span>
       </div>
 
       {/* 내용 */}
       {isDeleted ? (
-        <div className="mt-2 text-sm text-muted-foreground italic">삭제된 댓글입니다.</div>
+        <div className="mt-1.5 text-xs text-muted-foreground italic">삭제된 댓글입니다.</div>
       ) : (
-        <div className="mt-2 text-sm text-foreground whitespace-pre-wrap">{content}</div>
+        <div className="mt-1.5 text-xs sm:text-sm text-foreground whitespace-pre-wrap break-words">{content}</div>
       )}
 
       {/* 액션 버튼 — 내용 아래 */}
       {commentId && !isDeleted && (
-        <div className="mt-2 flex items-center gap-1 flex-wrap">
+        <div className="mt-2 flex flex-wrap items-center gap-1.5">
           <LikeButton
             targetType="boat_comment"
             targetId={commentId}
             canLike={canReport}
-            className="px-2 py-1 text-xs gap-1 rounded-md"
+            compact
           />
           <DislikeButton
             targetType="boat_comment"
             targetId={commentId}
             canDislike={canReport}
-            className="px-2 py-1 text-xs gap-1 rounded-md"
+            compact
           />
           <ReportButton targetType="boat_comment" targetId={commentId} canReport={canReport} />
           {currentUserId && (userId === currentUserId || isAdminUserId(currentUserId)) && onDelete && (
             <button
               type="button"
-              className="inline-flex items-center rounded-md p-1 text-muted-foreground/60 hover:text-destructive hover:bg-destructive/10 transition-colors"
+              className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-xs text-muted-foreground/70 hover:text-destructive hover:bg-destructive/10 border border-transparent hover:border-destructive/20 transition-colors"
               onClick={() => onDelete(commentId)}
               title="댓글 삭제"
             >
-              <Trash2 className="size-3.5" />
+              <Trash2 className="size-3" />
+              <span>삭제</span>
             </button>
           )}
         </div>
@@ -541,7 +542,7 @@ export function BoatCommentsSection({
 
   // ── render ─────────────────────────────────────────────────
   return (
-    <div className="flex flex-col flex-1 min-h-0">
+    <div className="flex flex-col lg:flex-1 lg:min-h-0">
       <div className="flex items-center justify-between gap-3">
         <div className="text-sm font-semibold text-foreground">
           댓글 <span className="text-muted-foreground">({listForRender.filter((c) => !("isDeleted" in c && c.isDeleted)).length})</span>
@@ -555,19 +556,20 @@ export function BoatCommentsSection({
         <p className="text-xs text-muted-foreground mt-2 leading-relaxed">{commentsNotice}</p>
       )}
 
-      <div className="mt-4 flex-1 min-h-0 overflow-y-auto pr-1 space-y-2">
+      {/* 모바일: 자연 높이 확장 / 데스크톱: flex-1 스크롤 영역 */}
+      <div className="mt-4 space-y-2 lg:flex-1 lg:min-h-0 lg:overflow-y-auto lg:pr-1">
         {listForRender.length === 0 ? (
           <div className="text-sm text-muted-foreground py-10 text-center">아직 댓글이 없습니다.</div>
         ) : (
           listForRender.map((c) => {
             const stake = getStakeForComment(c);
-            const userId = "userId" in c && typeof c.userId === "string" ? c.userId : undefined;
+            const commentUserId = "userId" in c && typeof c.userId === "string" ? c.userId : undefined;
             const isDeleted = "isDeleted" in c && !!c.isDeleted;
             return (
               <CommentCard
                 key={c.id}
                 author={c.author}
-                userId={userId}
+                userId={commentUserId}
                 commentId={c.id}
                 createdAt={c.createdAt}
                 content={c.content}

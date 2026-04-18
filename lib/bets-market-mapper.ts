@@ -150,6 +150,7 @@ export type MarketStoredSubCategory =
 function mapDbSubCategory(sub: string | null): MarketStoredSubCategory | undefined {
   if (!sub) return undefined;
   const table: Record<string, MarketStoredSubCategory> = {
+    // 한국어 DB 라벨
     해외축구: "football",
     국내야구: "baseball_kr",
     KBO: "baseball_kr",
@@ -173,6 +174,16 @@ function mapDbSubCategory(sub: string | null): MarketStoredSubCategory | undefin
     스타크래프트: "starcraft",
     "스타크래프트 2": "starcraft",
     SC2: "starcraft",
+    // 영어 내부 ID (구버전 유저 생성 보트 호환)
+    football: "football",
+    baseball_kr: "baseball_kr",
+    basketball: "basketball",
+    domestic: "domestic",
+    overseas: "overseas",
+    lol: "lol",
+    valorant: "valorant",
+    starcraft: "starcraft",
+    other: "other",
   };
   return table[sub] ?? "other";
 }

@@ -13,6 +13,8 @@ interface LikeButtonProps {
   className?: string;
   initialCount?: number;
   initialLiked?: boolean;
+  /** 작은 아이콘 모드 — 모바일 댓글용 */
+  compact?: boolean;
 }
 
 export function LikeButton({
@@ -22,6 +24,7 @@ export function LikeButton({
   className,
   initialCount = 0,
   initialLiked = false,
+  compact = false,
 }: LikeButtonProps) {
   const [count, setCount] = useState(initialCount);
   const [liked, setLiked] = useState(initialLiked);
@@ -80,7 +83,10 @@ export function LikeButton({
       onClick={handleClick}
       disabled={loading}
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-lg px-3 py-2 border transition-colors text-sm font-semibold",
+        "inline-flex items-center border transition-colors font-semibold",
+        compact
+          ? "gap-0.5 rounded px-1.5 py-0.5 text-xs"
+          : "gap-1.5 rounded-lg px-3 py-2 text-sm",
         liked
           ? "bg-neon-red/10 text-neon-red border-neon-red/20"
           : "bg-secondary/30 text-muted-foreground border-border/50 hover:bg-secondary/60",
@@ -89,7 +95,7 @@ export function LikeButton({
       aria-label="좋아요"
       title="좋아요"
     >
-      <ThumbsUp className={cn("size-4", liked && "fill-current")} />
+      <ThumbsUp className={cn(compact ? "size-3" : "size-4", liked && "fill-current")} />
       <span>{hydrated ? count : initialCount}</span>
     </button>
   );

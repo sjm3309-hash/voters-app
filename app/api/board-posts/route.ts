@@ -90,7 +90,7 @@ export async function GET(request: Request) {
     const page = parsePage(url.searchParams.get("page"));
     const limitRaw = parseInt(url.searchParams.get("limit") ?? String(LIMIT_DEFAULT), 10);
     const limit =
-      Number.isFinite(limitRaw) && limitRaw >= 1 && limitRaw <= 50 ? limitRaw : LIMIT_DEFAULT;
+      Number.isFinite(limitRaw) && limitRaw >= 1 && limitRaw <= 100 ? limitRaw : LIMIT_DEFAULT;
     const sort = url.searchParams.get("sort") === "hot" ? "hot" : "recent";
     const categoryRaw = url.searchParams.get("category");
     const category =
@@ -98,11 +98,16 @@ export async function GET(request: Request) {
         ? (categoryRaw as BoardCategoryId)
         : null;
     const q = (url.searchParams.get("q") ?? "").trim();
+    const authorId = (url.searchParams.get("authorId") ?? "").trim();
 
     const from = (page - 1) * limit;
     const to = from + limit - 1;
 
     let query = supabase.from("board_posts").select("*", { count: "exact", head: false });
+
+    if (authorId) {
+      query = query.eq("author_id", authorId);
+    }
 
     if (category) {
       query = query.eq("category", category);

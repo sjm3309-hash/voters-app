@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Loader2, Trophy, Trash2, User, AlertOctagon } from "lucide-react";
+import { ArrowLeft, Loader2, Trophy, Trash2, User, AlertOctagon, Tag } from "lucide-react";
 import { Navbar } from "@/components/navbar";
 import { Button } from "@/components/ui/button";
 import {
@@ -18,6 +18,17 @@ import { useIsAdmin } from "@/hooks/use-is-admin";
 import { useUserPointsBalance } from "@/lib/points";
 import { UserModerationPanel } from "@/components/admin/UserModerationPanel";
 import { cn } from "@/lib/utils";
+import { SUBCATEGORIES, subCategoryIdToDbLabel } from "@/lib/subcategories";
+import { marketCategoryIdToDbLabel } from "@/lib/market-category-db";
+
+const CATEGORY_OPTIONS = [
+  { id: "sports",   label: "스포츠" },
+  { id: "game",     label: "게임" },
+  { id: "stocks",   label: "주식" },
+  { id: "politics", label: "정치" },
+  { id: "fun",      label: "재미" },
+  { id: "crypto",   label: "크립토" },
+];
 
 type DashboardJson = {
   ok?: boolean;
@@ -64,6 +75,11 @@ export function BettingDetailClient() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteErr, setDeleteErr] = useState<string | null>(null);
+  const [categoryDialogOpen, setCategoryDialogOpen] = useState(false);
+  const [newCategoryId, setNewCategoryId] = useState("");
+  const [newSubCategoryId, setNewSubCategoryId] = useState("");
+  const [categoryUpdating, setCategoryUpdating] = useState(false);
+  const [categoryMsg, setCategoryMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   useEffect(() => {
     if (adminLoading) return;
@@ -145,6 +161,28 @@ export function BettingDetailClient() {
     }
   }
 
+  async function handleUpdateCategory() {
+    if (!id || !newCategoryId) return;
+    setCategoryUpdating(true);
+    setCategoryMsg(null);
+    try {
+      const res = await fetch(`/api/admin/bets/${encodeURIComponent(id)}/update-category`, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ categoryId: newCategoryId, subCategoryId: newSubCategoryId }),
+      });
+      const j = (await res.json().catch(() => ({}))) as { ok?: boolean; message?: string; error?: string };
+      if (!res.ok || !j.ok) throw new Error(j.error || res.statusText);
+      setCategoryMsg({ ok: true, text: j.message ?? "카테고리가 변경되었습니다." });
+      setReloadNonce((n) => n + 1);
+    } catch (e) {
+      setCategoryMsg({ ok: false, text: e instanceof Error ? e.message : "변경 실패" });
+    } finally {
+      setCategoryUpdating(false);
+    }
+  }
+
   async function handleCancel() {
     if (!id || !window.confirm("이 보트를 취소하고 모든 참여자에게 페블을 환불하시겠습니까?\n이 작업은 되돌릴 수 없습니다.")) return;
     setCancelling(true);
@@ -168,6 +206,81 @@ export function BettingDetailClient() {
   return (
     <div className="min-h-screen bg-background">
       <Navbar balance={balance} userId={userId} />
+
+      {/* 카테고리 변경 다이얼로그 */}
+      <Dialog open={categoryDialogOpen} onOpenChange={(open) => {
+        setCategoryDialogOpen(open);
+        if (!open) setCategoryMsg(null);
+      }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Tag className="size-5" />
+              카테고리 변경
+            </DialogTitle>
+            <DialogDescription>
+              보트의 카테고리와 세부 카테고리를 변경합니다.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">카테고리</label>
+              <select
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                value={newCategoryId}
+                onChange={(e) => {
+                  setNewCategoryId(e.target.value);
+                  setNewSubCategoryId("");
+                }}
+              >
+                <option value="">— 선택 —</option>
+                {CATEGORY_OPTIONS.map((c) => (
+                  <option key={c.id} value={c.id}>{c.label}</option>
+                ))}
+              </select>
+            </div>
+            {newCategoryId && (SUBCATEGORIES[newCategoryId]?.length ?? 0) > 0 && (
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">세부 카테고리</label>
+                <select
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  value={newSubCategoryId}
+                  onChange={(e) => setNewSubCategoryId(e.target.value)}
+                >
+                  <option value="">— 선택 안 함 (기타) —</option>
+                  {SUBCATEGORIES[newCategoryId].map((s) => (
+                    <option key={s.id} value={s.id}>{s.label}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {newCategoryId && (
+              <p className="text-xs text-muted-foreground">
+                DB 저장값: <code className="font-mono">{marketCategoryIdToDbLabel(newCategoryId)}</code>
+                {newSubCategoryId && (
+                  <> / <code className="font-mono">{subCategoryIdToDbLabel(newCategoryId, newSubCategoryId)}</code></>
+                )}
+              </p>
+            )}
+            {categoryMsg && (
+              <p className={cn("text-sm px-3 py-2 rounded-lg", categoryMsg.ok ? "bg-emerald-500/10 text-emerald-600" : "bg-red-500/10 text-red-500")}>
+                {categoryMsg.text}
+              </p>
+            )}
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setCategoryDialogOpen(false)} disabled={categoryUpdating}>
+              취소
+            </Button>
+            <Button
+              onClick={() => void handleUpdateCategory()}
+              disabled={categoryUpdating || !newCategoryId}
+            >
+              {categoryUpdating ? <><Loader2 className="size-4 animate-spin mr-1" />변경 중…</> : "변경 저장"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* 삭제 확인 다이얼로그 */}
       <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
@@ -250,6 +363,21 @@ export function BettingDetailClient() {
               <div className="flex flex-wrap gap-2 pt-1">
                 <Button variant="outline" size="sm" className="h-8 text-xs" asChild>
                   <Link href={`/market/${market.id}`}>유저 보트 페이지</Link>
+                </Button>
+                {/* 카테고리 변경 버튼 */}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 text-xs"
+                  onClick={() => {
+                    setCategoryMsg(null);
+                    setNewCategoryId("");
+                    setNewSubCategoryId("");
+                    setCategoryDialogOpen(true);
+                  }}
+                >
+                  <Tag className="size-3 mr-1" />
+                  카테고리 변경
                 </Button>
                 {/* 취소 버튼 */}
                 {!isCancelled && (

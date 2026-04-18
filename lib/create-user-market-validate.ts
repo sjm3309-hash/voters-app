@@ -1,5 +1,6 @@
 import { isPublicMarketCategoryId, marketCategoryIdToDbLabel } from "@/lib/market-category-db";
 import { fallbackHexByIndex, parseStoredOptionColor } from "@/lib/option-colors";
+import { subCategoryIdToDbLabel } from "@/lib/subcategories";
 
 export type CreateUserMarketFieldError = {
   field: string;
@@ -157,8 +158,11 @@ export function validateCreateUserMarketBody(body: CreateUserMarketBodyIn): {
 
   const accentColor = optionsForDb[0]?.color ?? "#6366f1";
 
-  // subCategory: 빈 문자열이면 "기타"로 처리
-  const subCategory = String(body.subCategory ?? "").trim() || "기타";
+  // subCategory: ID를 DB 저장용 한국어/표준 라벨로 변환 (e.g. "football" → "해외축구")
+  const rawSubCategory = String(body.subCategory ?? "").trim();
+  const subCategory = rawSubCategory
+    ? subCategoryIdToDbLabel(category, rawSubCategory)
+    : "기타";
 
   return {
     ok: true,

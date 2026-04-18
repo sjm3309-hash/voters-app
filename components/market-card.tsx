@@ -249,7 +249,7 @@ export function MarketCard({ market, onClick, className }: MarketCardProps) {
       type="button"
       onClick={onClick}
       className={cn(
-        "group flex min-h-[260px] w-full min-w-0 flex-col text-left p-4 md:p-5 rounded-xl border transition-all duration-300",
+        "group flex min-h-[260px] w-full min-w-0 flex-col text-left p-4 md:p-5 rounded-xl border overflow-hidden transition-all duration-300",
         "hover:shadow-lg",
         styles.card,
         phase === "active" && "hover:bg-surface-elevated/80",

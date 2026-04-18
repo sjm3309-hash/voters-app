@@ -22,8 +22,8 @@ function resolveSubCategoryDb(
     const m: Record<GameSubCategoryId, string> = {
       all: "",
       lol: "LoL",
-      valorant: "VALORANT",
-      starcraft: "StarCraft",
+      valorant: "발로란트",
+      starcraft: "스타크래프트",
       other: "기타",
     };
     return m[args.gameSubCategory] ?? null;

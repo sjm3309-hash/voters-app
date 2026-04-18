@@ -14,6 +14,8 @@ interface DislikeButtonProps {
   /** 초기값 (서버에서 미리 받은 경우) */
   initialCount?: number;
   initialDisliked?: boolean;
+  /** 작은 아이콘 모드 — 모바일 댓글용 */
+  compact?: boolean;
 }
 
 export function DislikeButton({
@@ -23,6 +25,7 @@ export function DislikeButton({
   className,
   initialCount = 0,
   initialDisliked = false,
+  compact = false,
 }: DislikeButtonProps) {
   const [count, setCount] = useState(initialCount);
   const [disliked, setDisliked] = useState(initialDisliked);
@@ -83,7 +86,10 @@ export function DislikeButton({
       onClick={handleClick}
       disabled={loading}
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-lg px-3 py-2 border transition-colors text-sm font-semibold",
+        "inline-flex items-center border transition-colors font-semibold",
+        compact
+          ? "gap-0.5 rounded px-1.5 py-0.5 text-xs"
+          : "gap-1.5 rounded-lg px-3 py-2 text-sm",
         disliked
           ? "bg-blue-500/10 text-blue-500 border-blue-500/20"
           : "bg-secondary/30 text-muted-foreground border-border/50 hover:bg-secondary/60",
@@ -92,7 +98,7 @@ export function DislikeButton({
       aria-label="싫어요"
       title="싫어요"
     >
-      <ThumbsDown className={cn("size-4", disliked && "fill-current")} />
+      <ThumbsDown className={cn(compact ? "size-3" : "size-4", disliked && "fill-current")} />
       <span>{hydrated ? count : initialCount}</span>
     </button>
   );
