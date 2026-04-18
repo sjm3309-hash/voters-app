@@ -72,11 +72,6 @@ export default function ProfilePage() {
   const [editNickname, setEditNickname] = useState("");
   const [editNickBusy, setEditNickBusy] = useState(false);
   const [editNickMsg, setEditNickMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null);
-  const [editPwdCurrent, setEditPwdCurrent] = useState("");
-  const [editPwdNew, setEditPwdNew] = useState("");
-  const [editPwdConfirm, setEditPwdConfirm] = useState("");
-  const [editPwdBusy, setEditPwdBusy] = useState(false);
-  const [editPwdMsg, setEditPwdMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null);
 
   const [userLevel, setUserLevel] = useState<number>(1);
   const [levelUpOpen, setLevelUpOpen] = useState(false);
@@ -223,10 +218,6 @@ export default function ProfilePage() {
   const openEditDialog = () => {
     setEditNickname(userName);
     setEditNickMsg(null);
-    setEditPwdCurrent("");
-    setEditPwdNew("");
-    setEditPwdConfirm("");
-    setEditPwdMsg(null);
     setEditOpen(true);
   };
 
@@ -244,12 +235,19 @@ export default function ProfilePage() {
     setEditNickBusy(true);
     setEditNickMsg(null);
     try {
-      const supabase = createClient();
-      const { error } = await supabase.auth.updateUser({
-        data: { full_name: trimmed, nickname: trimmed, name: trimmed },
+      const res = await fetch("/api/user/update-nickname", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ nickname: trimmed }),
       });
-      if (error) {
-        setEditNickMsg({ type: "err", text: error.message });
+      const j = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      if (!res.ok || !j.ok) {
+        if (j.error === "nickname_taken") {
+          setEditNickMsg({ type: "err", text: "이미 사용 중인 닉네임입니다. 다른 닉네임을 입력해 주세요." });
+        } else {
+          setEditNickMsg({ type: "err", text: j.error ?? "닉네임 변경에 실패했습니다." });
+        }
         return;
       }
       setUserName(trimmed);
@@ -259,50 +257,6 @@ export default function ProfilePage() {
     } finally {
       setEditNickBusy(false);
     }
-  };
-
-  const handleEditPasswordChange = async (e: FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const minLen = 6;
-    if (editPwdNew.length < minLen) {
-      setEditPwdMsg({ type: "err", text: `새 비밀번호는 ${minLen}자 이상이어야 합니다.` });
-      return;
-    }
-    if (editPwdNew !== editPwdConfirm) {
-      setEditPwdMsg({ type: "err", text: "새 비밀번호 확인이 일치하지 않습니다." });
-      return;
-    }
-    if (!userEmail) {
-      setEditPwdMsg({ type: "err", text: "이메일 정보를 찾을 수 없습니다." });
-      return;
-    }
-    setEditPwdBusy(true);
-    setEditPwdMsg(null);
-    const supabase = createClient();
-    const { error: signErr } = await supabase.auth.signInWithPassword({
-      email: userEmail,
-      password: editPwdCurrent,
-    });
-    if (signErr) {
-      setEditPwdBusy(false);
-      setEditPwdMsg({ type: "err", text: "현재 비밀번호가 올바르지 않습니다." });
-      return;
-    }
-    const { error: upErr } = await supabase.auth.updateUser({ password: editPwdNew });
-    setEditPwdBusy(false);
-    if (upErr) {
-      setEditPwdMsg({
-        type: "err",
-        text: upErr.message.includes("Password")
-          ? "비밀번호 정책을 확인해 주세요. (6자 이상)"
-          : upErr.message,
-      });
-      return;
-    }
-    setEditPwdCurrent("");
-    setEditPwdNew("");
-    setEditPwdConfirm("");
-    setEditPwdMsg({ type: "ok", text: "비밀번호가 변경되었습니다." });
   };
 
   const handlePasswordChange = async (e: FormEvent<HTMLFormElement>) => {
@@ -696,16 +650,11 @@ export default function ProfilePage() {
                 내 정보 수정
               </DialogTitle>
               <DialogDescription className="text-xs text-muted-foreground">
-                닉네임과 비밀번호를 변경할 수 있습니다.
+                닉네임을 변경할 수 있습니다.
               </DialogDescription>
             </DialogHeader>
 
-            {/* 닉네임 변경 */}
-            <form onSubmit={handleNicknameChange} className="space-y-3">
-              <div className="text-xs font-semibold text-foreground flex items-center gap-1.5">
-                <UserRound className="size-3.5 text-muted-foreground" aria-hidden />
-                닉네임 변경
-              </div>
+            <form onSubmit={handleNicknameChange} className="space-y-4">
               <div className="space-y-1.5">
                 <Label htmlFor="edit-nickname">새 닉네임</Label>
                 <Input
@@ -716,82 +665,38 @@ export default function ProfilePage() {
                   onChange={(e) => { setEditNickname(e.target.value); setEditNickMsg(null); }}
                   className="border-border/50 bg-secondary"
                   disabled={editNickBusy}
-                  placeholder="변경할 닉네임 입력"
+                  placeholder="2~20자"
+                  maxLength={20}
                 />
-              </div>
-              {editNickMsg && (
-                <p className={editNickMsg.type === "ok" ? "text-sm text-green-500" : "text-sm text-destructive"} role={editNickMsg.type === "err" ? "alert" : undefined}>
-                  {editNickMsg.text}
+                <p className="text-[11px] text-muted-foreground">
+                  현재 닉네임: <span className="font-medium text-foreground">{userName}</span>
                 </p>
+              </div>
+
+              {editNickMsg && (
+                <div
+                  className={`flex items-start gap-2 rounded-lg px-3 py-2.5 text-sm ${
+                    editNickMsg.type === "ok"
+                      ? "bg-green-500/10 text-green-500"
+                      : "bg-destructive/10 text-destructive"
+                  }`}
+                  role={editNickMsg.type === "err" ? "alert" : undefined}
+                >
+                  {editNickMsg.type === "ok" ? (
+                    <CheckCircle2 className="mt-0.5 size-4 shrink-0" aria-hidden />
+                  ) : (
+                    <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
+                  )}
+                  <span>{editNickMsg.text}</span>
+                </div>
               )}
-              <Button type="submit" size="sm" disabled={editNickBusy} className="w-full">
-                {editNickBusy ? <Loader2 className="size-4 animate-spin" /> : "닉네임 저장"}
+
+              <Button type="submit" disabled={editNickBusy} className="w-full">
+                {editNickBusy ? (
+                  <><Loader2 className="size-4 animate-spin mr-2" />확인 중…</>
+                ) : "닉네임 저장"}
               </Button>
             </form>
-
-            {/* 구분선 */}
-            <div className="border-t border-border/40" />
-
-            {/* 비밀번호 변경 */}
-            <div className="space-y-3">
-              <div className="text-xs font-semibold text-foreground flex items-center gap-1.5">
-                <Lock className="size-3.5 text-muted-foreground" aria-hidden />
-                비밀번호 변경
-              </div>
-              {canChangePassword ? (
-                <form onSubmit={handleEditPasswordChange} className="space-y-3">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="edit-pwd-current">현재 비밀번호</Label>
-                    <Input
-                      id="edit-pwd-current"
-                      type="password"
-                      autoComplete="current-password"
-                      value={editPwdCurrent}
-                      onChange={(e) => { setEditPwdCurrent(e.target.value); setEditPwdMsg(null); }}
-                      className="border-border/50 bg-secondary"
-                      disabled={editPwdBusy}
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="edit-pwd-new">새 비밀번호</Label>
-                    <Input
-                      id="edit-pwd-new"
-                      type="password"
-                      autoComplete="new-password"
-                      value={editPwdNew}
-                      onChange={(e) => { setEditPwdNew(e.target.value); setEditPwdMsg(null); }}
-                      className="border-border/50 bg-secondary"
-                      disabled={editPwdBusy}
-                      placeholder="6자 이상"
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="edit-pwd-confirm">새 비밀번호 확인</Label>
-                    <Input
-                      id="edit-pwd-confirm"
-                      type="password"
-                      autoComplete="new-password"
-                      value={editPwdConfirm}
-                      onChange={(e) => { setEditPwdConfirm(e.target.value); setEditPwdMsg(null); }}
-                      className="border-border/50 bg-secondary"
-                      disabled={editPwdBusy}
-                    />
-                  </div>
-                  {editPwdMsg && (
-                    <p className={editPwdMsg.type === "ok" ? "text-sm text-green-500" : "text-sm text-destructive"} role={editPwdMsg.type === "err" ? "alert" : undefined}>
-                      {editPwdMsg.text}
-                    </p>
-                  )}
-                  <Button type="submit" size="sm" disabled={editPwdBusy} className="w-full">
-                    {editPwdBusy ? <Loader2 className="size-4 animate-spin" /> : "비밀번호 변경"}
-                  </Button>
-                </form>
-              ) : (
-                <p className="text-xs text-muted-foreground rounded-lg bg-secondary/40 px-3 py-2.5">
-                  소셜 로그인(구글 등) 계정은 비밀번호 변경을 지원하지 않습니다.
-                </p>
-              )}
-            </div>
           </div>
         </DialogContent>
       </Dialog>
