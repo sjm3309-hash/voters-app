@@ -328,11 +328,26 @@ export function useUserPointsBalance() {
       }
     };
 
+    // voters:balanceUpdated — 서버에서 잔액이 바뀌었을 때 (일일보상, 레벨업 등)
+    // 상세 금액 없이 "서버에서 다시 가져와" 신호만 보냄
+    const onBalanceUpdated = () => {
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        const uid = session?.user?.id;
+        if (!uid || uid === "anon") return;
+        if (isAdminUser(uid)) { setPoints(ADMIN_BALANCE); return; }
+        void refreshPebblesFromServer(uid).then((bal) => {
+          if (typeof bal === "number") setPoints(bal);
+        });
+      });
+    };
+
     window.addEventListener("voters:pointsUpdated", onUpdated);
+    window.addEventListener("voters:balanceUpdated", onBalanceUpdated);
 
     return () => {
       authListener.subscription.unsubscribe();
       window.removeEventListener("voters:pointsUpdated", onUpdated);
+      window.removeEventListener("voters:balanceUpdated", onBalanceUpdated);
     };
   }, []);
 
