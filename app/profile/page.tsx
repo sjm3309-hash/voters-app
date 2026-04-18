@@ -10,6 +10,7 @@ import {
   Loader2,
   Lock,
   MessageSquare,
+  Pencil,
   UserRound,
 } from "lucide-react";
 import { Navbar } from "@/components/navbar";
@@ -20,6 +21,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -64,6 +66,17 @@ export default function ProfilePage() {
   const [pwdConfirm, setPwdConfirm] = useState("");
   const [pwdBusy, setPwdBusy] = useState(false);
   const [pwdMsg, setPwdMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null);
+
+  // 내 정보 수정 다이얼로그
+  const [editOpen, setEditOpen] = useState(false);
+  const [editNickname, setEditNickname] = useState("");
+  const [editNickBusy, setEditNickBusy] = useState(false);
+  const [editNickMsg, setEditNickMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null);
+  const [editPwdCurrent, setEditPwdCurrent] = useState("");
+  const [editPwdNew, setEditPwdNew] = useState("");
+  const [editPwdConfirm, setEditPwdConfirm] = useState("");
+  const [editPwdBusy, setEditPwdBusy] = useState(false);
+  const [editPwdMsg, setEditPwdMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null);
 
   const [userLevel, setUserLevel] = useState<number>(1);
   const [levelUpOpen, setLevelUpOpen] = useState(false);
@@ -206,6 +219,91 @@ export default function ProfilePage() {
       .filter((c) => c.author === userName)
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }, [comments, userName]);
+
+  const openEditDialog = () => {
+    setEditNickname(userName);
+    setEditNickMsg(null);
+    setEditPwdCurrent("");
+    setEditPwdNew("");
+    setEditPwdConfirm("");
+    setEditPwdMsg(null);
+    setEditOpen(true);
+  };
+
+  const handleNicknameChange = async (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const trimmed = editNickname.trim();
+    if (!trimmed) {
+      setEditNickMsg({ type: "err", text: "닉네임을 입력해 주세요." });
+      return;
+    }
+    if (trimmed === userName) {
+      setEditNickMsg({ type: "err", text: "현재 닉네임과 동일합니다." });
+      return;
+    }
+    setEditNickBusy(true);
+    setEditNickMsg(null);
+    try {
+      const supabase = createClient();
+      const { error } = await supabase.auth.updateUser({
+        data: { full_name: trimmed, nickname: trimmed, name: trimmed },
+      });
+      if (error) {
+        setEditNickMsg({ type: "err", text: error.message });
+        return;
+      }
+      setUserName(trimmed);
+      setEditNickMsg({ type: "ok", text: "닉네임이 변경되었습니다." });
+    } catch {
+      setEditNickMsg({ type: "err", text: "네트워크 오류가 발생했습니다." });
+    } finally {
+      setEditNickBusy(false);
+    }
+  };
+
+  const handleEditPasswordChange = async (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const minLen = 6;
+    if (editPwdNew.length < minLen) {
+      setEditPwdMsg({ type: "err", text: `새 비밀번호는 ${minLen}자 이상이어야 합니다.` });
+      return;
+    }
+    if (editPwdNew !== editPwdConfirm) {
+      setEditPwdMsg({ type: "err", text: "새 비밀번호 확인이 일치하지 않습니다." });
+      return;
+    }
+    if (!userEmail) {
+      setEditPwdMsg({ type: "err", text: "이메일 정보를 찾을 수 없습니다." });
+      return;
+    }
+    setEditPwdBusy(true);
+    setEditPwdMsg(null);
+    const supabase = createClient();
+    const { error: signErr } = await supabase.auth.signInWithPassword({
+      email: userEmail,
+      password: editPwdCurrent,
+    });
+    if (signErr) {
+      setEditPwdBusy(false);
+      setEditPwdMsg({ type: "err", text: "현재 비밀번호가 올바르지 않습니다." });
+      return;
+    }
+    const { error: upErr } = await supabase.auth.updateUser({ password: editPwdNew });
+    setEditPwdBusy(false);
+    if (upErr) {
+      setEditPwdMsg({
+        type: "err",
+        text: upErr.message.includes("Password")
+          ? "비밀번호 정책을 확인해 주세요. (6자 이상)"
+          : upErr.message,
+      });
+      return;
+    }
+    setEditPwdCurrent("");
+    setEditPwdNew("");
+    setEditPwdConfirm("");
+    setEditPwdMsg({ type: "ok", text: "비밀번호가 변경되었습니다." });
+  };
 
   const handlePasswordChange = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -352,6 +450,16 @@ export default function ProfilePage() {
                     </span>
                   )}
                 </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={openEditDialog}
+                  className="shrink-0 gap-1.5 text-xs"
+                >
+                  <Pencil className="size-3" aria-hidden />
+                  내 정보 수정
+                </Button>
               </div>
 
               {!isAdmin && (
@@ -576,6 +684,117 @@ export default function ProfilePage() {
           )}
         </Tabs>
       </main>
+
+      {/* ─── 내 정보 수정 다이얼로그 ──────────────────────────────────── */}
+      <Dialog open={editOpen} onOpenChange={(o) => { setEditOpen(o); }}>
+        <DialogContent className="max-w-sm rounded-2xl border p-0 gap-0">
+          <div className="h-1 w-full rounded-t-2xl bg-gradient-to-r from-chart-5/50 via-chart-5 to-chart-5/50" />
+          <div className="p-6 space-y-5">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-base">
+                <Pencil className="size-4 text-chart-5" aria-hidden />
+                내 정보 수정
+              </DialogTitle>
+              <DialogDescription className="text-xs text-muted-foreground">
+                닉네임과 비밀번호를 변경할 수 있습니다.
+              </DialogDescription>
+            </DialogHeader>
+
+            {/* 닉네임 변경 */}
+            <form onSubmit={handleNicknameChange} className="space-y-3">
+              <div className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                <UserRound className="size-3.5 text-muted-foreground" aria-hidden />
+                닉네임 변경
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="edit-nickname">새 닉네임</Label>
+                <Input
+                  id="edit-nickname"
+                  type="text"
+                  autoComplete="nickname"
+                  value={editNickname}
+                  onChange={(e) => { setEditNickname(e.target.value); setEditNickMsg(null); }}
+                  className="border-border/50 bg-secondary"
+                  disabled={editNickBusy}
+                  placeholder="변경할 닉네임 입력"
+                />
+              </div>
+              {editNickMsg && (
+                <p className={editNickMsg.type === "ok" ? "text-sm text-green-500" : "text-sm text-destructive"} role={editNickMsg.type === "err" ? "alert" : undefined}>
+                  {editNickMsg.text}
+                </p>
+              )}
+              <Button type="submit" size="sm" disabled={editNickBusy} className="w-full">
+                {editNickBusy ? <Loader2 className="size-4 animate-spin" /> : "닉네임 저장"}
+              </Button>
+            </form>
+
+            {/* 구분선 */}
+            <div className="border-t border-border/40" />
+
+            {/* 비밀번호 변경 */}
+            <div className="space-y-3">
+              <div className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                <Lock className="size-3.5 text-muted-foreground" aria-hidden />
+                비밀번호 변경
+              </div>
+              {canChangePassword ? (
+                <form onSubmit={handleEditPasswordChange} className="space-y-3">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="edit-pwd-current">현재 비밀번호</Label>
+                    <Input
+                      id="edit-pwd-current"
+                      type="password"
+                      autoComplete="current-password"
+                      value={editPwdCurrent}
+                      onChange={(e) => { setEditPwdCurrent(e.target.value); setEditPwdMsg(null); }}
+                      className="border-border/50 bg-secondary"
+                      disabled={editPwdBusy}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="edit-pwd-new">새 비밀번호</Label>
+                    <Input
+                      id="edit-pwd-new"
+                      type="password"
+                      autoComplete="new-password"
+                      value={editPwdNew}
+                      onChange={(e) => { setEditPwdNew(e.target.value); setEditPwdMsg(null); }}
+                      className="border-border/50 bg-secondary"
+                      disabled={editPwdBusy}
+                      placeholder="6자 이상"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="edit-pwd-confirm">새 비밀번호 확인</Label>
+                    <Input
+                      id="edit-pwd-confirm"
+                      type="password"
+                      autoComplete="new-password"
+                      value={editPwdConfirm}
+                      onChange={(e) => { setEditPwdConfirm(e.target.value); setEditPwdMsg(null); }}
+                      className="border-border/50 bg-secondary"
+                      disabled={editPwdBusy}
+                    />
+                  </div>
+                  {editPwdMsg && (
+                    <p className={editPwdMsg.type === "ok" ? "text-sm text-green-500" : "text-sm text-destructive"} role={editPwdMsg.type === "err" ? "alert" : undefined}>
+                      {editPwdMsg.text}
+                    </p>
+                  )}
+                  <Button type="submit" size="sm" disabled={editPwdBusy} className="w-full">
+                    {editPwdBusy ? <Loader2 className="size-4 animate-spin" /> : "비밀번호 변경"}
+                  </Button>
+                </form>
+              ) : (
+                <p className="text-xs text-muted-foreground rounded-lg bg-secondary/40 px-3 py-2.5">
+                  소셜 로그인(구글 등) 계정은 비밀번호 변경을 지원하지 않습니다.
+                </p>
+              )}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={levelUpOpen && !!nextTier} onOpenChange={(o) => { setLevelUpOpen(o); if (!o) setLevelUpMsg(null); }}>
         <DialogContent
