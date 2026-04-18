@@ -405,12 +405,7 @@ export function CommunityBoard({
         return;
       }
 
-      const storedLen = typeof window !== "undefined" ? loadBoardPosts().length : 0;
-      if (storedLen > 0) {
-        setUseRemote(false);
-        return;
-      }
-
+      // 서버 응답이 정상이면 항상 remote 모드 사용 (localStorage mock 폴백 금지)
       setUseRemote(true);
       setRemotePosts([]);
       setRemoteTotalPages(0);
