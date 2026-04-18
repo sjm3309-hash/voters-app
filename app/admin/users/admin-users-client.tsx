@@ -21,6 +21,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { UserActivityDialog } from "@/components/admin/UserActivityDialog";
 import { UserModerationPanel } from "@/components/admin/UserModerationPanel";
+import { PebbleHistoryDialog } from "@/components/admin/PebbleHistoryDialog";
 import { useIsAdmin } from "@/hooks/use-is-admin";
 import { useUserPointsBalance } from "@/lib/points";
 import { describeAdminGrantError, grantPebblesByUserId } from "@/lib/admin-stats";
@@ -64,6 +65,7 @@ function DbUserRow({
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [activityOpen, setActivityOpen] = useState(false);
   const [modPanelOpen, setModPanelOpen] = useState(false);
+  const [pebbleHistoryOpen, setPebbleHistoryOpen] = useState(false);
 
   const handleGrant = async () => {
     const n = parseInt(amount, 10);
@@ -148,18 +150,33 @@ function DbUserRow({
           </span>
         </td>
         <td className="px-2 py-1 text-right whitespace-nowrap align-middle">
-          <span
-            className={cn(
-              "text-[12px] font-semibold tabular-nums inline",
-              entry.isAdminEmail ? "text-chart-5" : "text-foreground",
-            )}
-          >
-            {entry.pebbles.toLocaleString()} P
-          </span>
+          {entry.isAdminEmail ? (
+            <span className="text-[12px] font-semibold tabular-nums text-chart-5">
+              {entry.pebbles.toLocaleString()} P
+            </span>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setPebbleHistoryOpen(true)}
+              className="text-[12px] font-semibold tabular-nums text-foreground hover:text-chart-5 hover:underline decoration-dotted underline-offset-2 transition-colors cursor-pointer"
+              title="클릭하여 페블 내역 보기"
+            >
+              {entry.pebbles.toLocaleString()} P
+            </button>
+          )}
           {entry.profileMissing && !entry.isAdminEmail && (
             <span className="text-[9px] text-amber-500 ml-1 align-middle" title="profiles 행 없음 · 앱에서 잔액 조회 시 생성">
               미생성
             </span>
+          )}
+          {!entry.isAdminEmail && (
+            <PebbleHistoryDialog
+              displayName={entry.displayName}
+              userId={entry.id}
+              currentPebbles={entry.pebbles}
+              open={pebbleHistoryOpen}
+              onOpenChange={setPebbleHistoryOpen}
+            />
           )}
         </td>
         <td className="px-2 py-1 text-right text-[11px] text-muted-foreground tabular-nums whitespace-nowrap align-middle">
