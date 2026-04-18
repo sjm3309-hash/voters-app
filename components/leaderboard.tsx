@@ -1,129 +1,135 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Trophy } from "lucide-react";
-import { getLeaderboard, type LeaderboardEntry } from "@/lib/leaderboard";
+import { useEffect, useState, useRef } from "react";
+import { Trophy, ArrowUp, ArrowDown, Minus } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { LevelIcon } from "@/components/level-icon";
+import type { RankingEntry } from "@/app/api/ranking/route";
 import { cn } from "@/lib/utils";
 
 const RANK_MEDALS = ["🥇", "🥈", "🥉"];
+const SLIDE_INTERVAL = 20_000; // 20초마다 다음 사람
+const FETCH_INTERVAL = 60_000; // 60초마다 데이터 갱신
 
-function RankItem({ entry, rank }: { entry: LeaderboardEntry; rank: number }) {
+function RankChangeChip({ change }: { change: number | null }) {
+  if (change === null) return null;
+  if (change === 0) return <Minus className="size-3 text-muted-foreground/60" />;
+  if (change > 0)
+    return (
+      <span className="inline-flex items-center gap-0.5 text-xs font-semibold text-emerald-500">
+        <ArrowUp className="size-2.5" />{change}
+      </span>
+    );
   return (
-    <div className="flex items-center gap-2 py-1.5 px-2 rounded-lg hover:bg-secondary/40 transition-colors group">
-      {/* 순위 */}
-      <span className="w-6 text-center text-xs font-bold shrink-0">
-        {rank <= 3 ? (
-          <span className="text-sm">{RANK_MEDALS[rank - 1]}</span>
-        ) : (
-          <span className="text-muted-foreground">{rank}</span>
-        )}
-      </span>
-
-      {/* 레벨 아이콘 */}
-      <LevelIcon level={entry.level} size={14} className="shrink-0" />
-
-      {/* 닉네임 */}
-      <span className="flex-1 text-xs font-medium text-foreground truncate min-w-0">
-        {entry.displayName}
-      </span>
-
-      {/* 총 페블 */}
-      <span className="text-xs text-muted-foreground tabular-nums shrink-0">
-        {entry.totalWealth.toLocaleString()}&thinsp;P
-      </span>
-    </div>
+    <span className="inline-flex items-center gap-0.5 text-xs font-semibold text-red-500">
+      <ArrowDown className="size-2.5" />{Math.abs(change)}
+    </span>
   );
 }
 
 export function UserLeaderboard({ className }: { className?: string }) {
-  const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
-  const [page, setPage] = useState<0 | 1>(0); // 0 = 1~5위, 1 = 6~10위
-  const [fade, setFade] = useState(true);
+  const router = useRouter();
+  const [entries, setEntries] = useState<RankingEntry[]>([]);
+  const [cursor, setCursor] = useState(0); // 현재 보여주는 인덱스 (0~9)
+  const [visible, setVisible] = useState(true); // fade 제어
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const load = () => setEntries(getLeaderboard());
-
+  // TOP 10 데이터 가져오기
   useEffect(() => {
-    load();
-
-    // 페블 또는 레벨 변경 시 즉시 갱신
-    const refresh = () => load();
-    window.addEventListener("voters:pointsUpdated", refresh);
-    window.addEventListener("voters:levelUpdated", refresh);
-    window.addEventListener("storage", refresh);
-    return () => {
-      window.removeEventListener("voters:pointsUpdated", refresh);
-      window.removeEventListener("voters:levelUpdated", refresh);
-      window.removeEventListener("storage", refresh);
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const res = await fetch("/api/ranking?page=1&limit=10", { cache: "no-store" });
+        const json = (await res.json()) as { ok: boolean; rankings?: RankingEntry[] };
+        if (!cancelled && json.ok) setEntries(json.rankings ?? []);
+      } catch { /* 무시 */ }
     };
+    void load();
+    const id = setInterval(() => void load(), FETCH_INTERVAL);
+    return () => { cancelled = true; clearInterval(id); };
   }, []);
 
-  // 5초마다 1~5위 ↔ 6~10위 토글 (10위 이상 데이터가 있을 때만)
+  // 20초마다 다음 순위로 슬라이드
   useEffect(() => {
-    if (entries.length <= 5) return;
-    const id = setInterval(() => {
-      setFade(false);
+    if (timerRef.current) clearInterval(timerRef.current);
+    if (entries.length === 0) return;
+
+    timerRef.current = setInterval(() => {
+      setVisible(false);
       setTimeout(() => {
-        setPage((p) => (p === 0 ? 1 : 0));
-        setFade(true);
-      }, 250);
-    }, 5000);
-    return () => clearInterval(id);
+        setCursor((c) => (c + 1) % Math.min(entries.length, 10));
+        setVisible(true);
+      }, 300);
+    }, SLIDE_INTERVAL);
+
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [entries.length]);
 
-  const slice = page === 0 ? entries.slice(0, 5) : entries.slice(5, 10);
-  const rankOffset = page === 0 ? 1 : 6;
+  const entry = entries[cursor] ?? null;
+  const total = Math.min(entries.length, 10);
 
   return (
     <div
       className={cn(
-        "rounded-xl border border-border/60 bg-card/80 backdrop-blur-sm overflow-hidden",
+        "rounded-xl border border-border/60 bg-card/80 backdrop-blur-sm overflow-hidden cursor-pointer group",
         className,
       )}
+      onClick={() => router.push("/ranking")}
+      title="전체 순위 보기"
     >
       {/* 헤더 */}
-      <div className="flex items-center gap-2 px-3 py-2 border-b border-border/40 bg-secondary/20">
-        <Trophy className="size-3.5 text-yellow-400" />
+      <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border/40 bg-secondary/20 group-hover:bg-secondary/30 transition-colors">
+        <Trophy className="size-3 text-yellow-400 shrink-0" />
         <span className="text-xs font-semibold text-foreground">유저 순위</span>
-        <span className="ml-auto text-[10px] text-muted-foreground tabular-nums">
-          {page === 0 ? "1 – 5위" : "6 – 10위"}
-        </span>
-        {entries.length > 5 && (
-          <div className="flex gap-1 ml-1">
-            <button
-              onClick={() => setPage(0)}
-              className={cn(
-                "size-1.5 rounded-full transition-colors",
-                page === 0 ? "bg-chart-5" : "bg-muted-foreground/30",
+        {/* 점 인디케이터 */}
+      </div>
+
+      {/* 현재 순위 한 명 */}
+      <div
+        className={cn(
+          "flex items-center gap-2.5 px-3 py-2 transition-opacity duration-300",
+          visible ? "opacity-100" : "opacity-0",
+        )}
+      >
+        {entry ? (
+          <>
+            {/* 메달 / 순위 번호 */}
+            <span className="w-6 text-center shrink-0">
+              {entry.rank <= 3 ? (
+                <span className="text-base leading-none">{RANK_MEDALS[entry.rank - 1]}</span>
+              ) : (
+                <span className="text-xs font-black text-muted-foreground tabular-nums">
+                  {entry.rank}
+                </span>
               )}
-            />
-            <button
-              onClick={() => setPage(1)}
-              className={cn(
-                "size-1.5 rounded-full transition-colors",
-                page === 1 ? "bg-chart-5" : "bg-muted-foreground/30",
-              )}
-            />
-          </div>
+            </span>
+
+            {/* 레벨 아이콘 */}
+            <LevelIcon level={entry.level} size={16} className="shrink-0" />
+
+            {/* 닉네임 */}
+            <span className="flex-1 text-xs font-semibold text-foreground truncate min-w-0">
+              {entry.nickname}
+            </span>
+
+            {/* 순위 변동 */}
+            <RankChangeChip change={entry.rankChange} />
+
+            {/* 총 포인트 */}
+            <span className="text-xs text-muted-foreground tabular-nums shrink-0">
+              {entry.totalPoints.toLocaleString()}&thinsp;P
+            </span>
+          </>
+        ) : (
+          <span className="text-xs text-muted-foreground py-0.5">불러오는 중…</span>
         )}
       </div>
 
-      {/* 리스트 */}
-      <div
-        className={cn(
-          "px-1 py-1 transition-opacity duration-200",
-          fade ? "opacity-100" : "opacity-0",
-        )}
-      >
-        {slice.length === 0 ? (
-          <p className="text-center text-xs text-muted-foreground py-4">
-            아직 데이터가 없습니다
-          </p>
-        ) : (
-          slice.map((entry, i) => (
-            <RankItem key={entry.displayName} entry={entry} rank={rankOffset + i} />
-          ))
-        )}
+      {/* 하단 힌트 */}
+      <div className="px-3 pb-1.5 text-center">
+        <span className="text-xs text-muted-foreground/50 group-hover:text-muted-foreground/80 transition-colors">
+          전체 순위 보기 →
+        </span>
       </div>
     </div>
   );

@@ -18,6 +18,7 @@ import {
   toggleProposalLike,
   type CustomerCenterPostRow,
 } from "@/lib/customer-center";
+import { AdminAuthorBadge } from "@/components/admin-author-badge";
 import { useUserPointsBalance } from "@/lib/points";
 import { cn } from "@/lib/utils";
 
@@ -144,7 +145,7 @@ export function CustomerCenterClient() {
               고객센터
             </h1>
             <p className="text-sm text-muted-foreground mt-1">
-              1:1 문의(비공개)와 베팅 아이디어 제안(공개)을 남길 수 있어요.
+              1:1 문의(비공개)와 보트 아이디어 제안(공개)을 남길 수 있어요.
             </p>
           </div>
           <div className="text-xs text-muted-foreground">
@@ -161,7 +162,7 @@ export function CustomerCenterClient() {
         <Tabs value={tab} onValueChange={(v) => setTab(v as any)} className="w-full">
           <TabsList className="grid grid-cols-2 w-full">
             <TabsTrigger value="inquiry">1:1 문의하기</TabsTrigger>
-            <TabsTrigger value="proposal">베팅 아이디어 제안</TabsTrigger>
+            <TabsTrigger value="proposal">보트 아이디어 제안</TabsTrigger>
           </TabsList>
 
           <TabsContent value="inquiry" className="mt-6 space-y-6">
@@ -222,7 +223,11 @@ export function CustomerCenterClient() {
                         <span className="text-[11px] text-muted-foreground tabular-nums">{formatTime(p.created_at)}</span>
                       </div>
                       <p className="text-xs text-muted-foreground mt-1 line-clamp-1">
-                        {p.author_display_name ?? "익명"}
+                        <AdminAuthorBadge
+                          name={p.author_display_name ?? "익명"}
+                          userId={p.user_id}
+                          iconSize={11}
+                        />
                       </p>
                     </Link>
                   ))}
@@ -263,7 +268,7 @@ export function CustomerCenterClient() {
                     id="proposal-title"
                     value={proposalTitle}
                     onChange={(e) => setProposalTitle(e.target.value)}
-                    placeholder="예: 이번 주말 경기, 이런 베팅 어때요?"
+                    placeholder="예: 이번 주말 경기, 이런 보트 어때요?"
                     disabled={!canWrite || submitting}
                   />
                 </div>
@@ -315,7 +320,12 @@ export function CustomerCenterClient() {
                             <p className="text-sm font-bold text-foreground line-clamp-2">{p.title}</p>
                             <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{p.content}</p>
                             <p className="text-[11px] text-muted-foreground mt-2 tabular-nums">
-                              {p.author_display_name ?? "익명"} · {formatTime(p.created_at)}
+                              <AdminAuthorBadge
+                                name={p.author_display_name ?? "익명"}
+                                userId={p.user_id}
+                                iconSize={11}
+                              />
+                              {" · "}{formatTime(p.created_at)}
                             </p>
                           </Link>
                           <button

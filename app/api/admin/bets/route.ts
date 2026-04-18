@@ -3,6 +3,7 @@ import { createServiceRoleClient } from "@/utils/supabase/service-role";
 import { betRowToMarket, type BetRowPublic } from "@/lib/bets-market-mapper";
 import { sortBetFeedRows, type SmartSortMode } from "@/lib/bets-feed-sort";
 import { requireAdminJson } from "@/app/api/admin/_auth";
+import { sumPoolsByMarketIds } from "@/lib/bet-history-flavor";
 
 /**
  * 운영자 전용 — DB의 **모든** 동기화 보트 (confirmed_at 3일 제한 없음)
@@ -55,19 +56,8 @@ export async function GET(request: Request) {
     const rawRows = (data ?? []) as BetRowPublic[];
     const ids = rawRows.map((r) => r.id).filter(Boolean);
 
-    const poolBy = new Map<string, number>();
-    if (ids.length > 0) {
-      const { data: hist, error: hErr } = await supabase
-        .from("bet_history")
-        .select("market_id, amount")
-        .in("market_id", ids);
-      if (!hErr && hist) {
-        for (const h of hist as { market_id: string; amount: number }[]) {
-          const mid = h.market_id;
-          poolBy.set(mid, (poolBy.get(mid) ?? 0) + (h.amount ?? 0));
-        }
-      }
-    }
+    const poolBy =
+      ids.length > 0 ? await sumPoolsByMarketIds(supabase, ids) : new Map<string, number>();
 
     const sortMode: SmartSortMode =
       sort === "created_desc" ? "created_desc" : "smart";

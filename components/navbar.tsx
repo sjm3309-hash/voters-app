@@ -2,7 +2,7 @@
 
 import { useEffect, useState, type ChangeEvent } from "react";
 import Link from "next/link";
-import { Plus, Search, Settings2 } from "lucide-react";
+import { Plus, Search, Settings2, UserRound } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import {
   Sheet,
@@ -13,7 +13,6 @@ import {
 } from "@/components/ui/sheet";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { AuthButton } from "@/components/auth/auth-button";
-import { UserCenter } from "@/components/user/user-center";
 import { NotificationsBell } from "@/components/notifications/notifications-bell";
 import { PointsHistoryDialog } from "@/components/points/points-history-dialog";
 import { useUserLevel } from "@/hooks/use-user-level";
@@ -75,7 +74,7 @@ export function Navbar({ balance, userId, searchQuery, onSearch }: NavbarProps) 
               <button
                 type="button"
                 aria-label="검색 열기"
-                className="lg:hidden p-2 rounded-lg hover:bg-secondary transition-colors"
+                className="lg:hidden p-2.5 rounded-lg hover:bg-secondary transition-colors"
                 onClick={() => setMobileSearchOpen(true)}
               >
                 <Search className="size-5 text-muted-foreground" />
@@ -130,18 +129,35 @@ export function Navbar({ balance, userId, searchQuery, onSearch }: NavbarProps) 
 
           {/* 보트 생성하기 버튼 — 로그인 시에만 표시 */}
           {levelMounted && loggedIn && (
-            <Link
-              href="/market/create"
-              className={navCtaPillClass}
-              style={{
-                background: "color-mix(in oklch, var(--chart-5) 12%, transparent)",
-                borderColor: "color-mix(in oklch, var(--chart-5) 35%, transparent)",
-                color: "var(--chart-5)",
-              }}
-            >
-              <Plus className="size-3.5" />
-              보트 만들기
-            </Link>
+            <>
+              {/* 데스크톱: 텍스트 pill */}
+              <Link
+                href="/market/create"
+                className={navCtaPillClass}
+                style={{
+                  background: "color-mix(in oklch, var(--chart-5) 12%, transparent)",
+                  borderColor: "color-mix(in oklch, var(--chart-5) 35%, transparent)",
+                  color: "var(--chart-5)",
+                }}
+              >
+                <Plus className="size-3.5" />
+                보트 만들기
+              </Link>
+              {/* 모바일: 아이콘 전용 버튼 */}
+              <Link
+                href="/market/create"
+                aria-label="보트 만들기"
+                title="보트 만들기"
+                className="sm:hidden flex items-center justify-center size-9 rounded-full border transition-colors"
+                style={{
+                  background: "color-mix(in oklch, var(--chart-5) 12%, transparent)",
+                  borderColor: "color-mix(in oklch, var(--chart-5) 35%, transparent)",
+                  color: "var(--chart-5)",
+                }}
+              >
+                <Plus className="size-4" />
+              </Link>
+            </>
           )}
 
           {/* 페블 + 레벨 — 로그인 시에만 표시, 클릭하면 내역 모달 */}
@@ -153,7 +169,7 @@ export function Navbar({ balance, userId, searchQuery, onSearch }: NavbarProps) 
             >
               {/* 운영자 배지만 표시, 일반 유저는 아이콘 없음 */}
               {isAdmin && (
-                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full border leading-none bg-chart-5/20 text-chart-5 border-chart-5/40">
+                <span className="text-xs font-bold px-1.5 py-0.5 rounded-full border leading-none bg-chart-5/20 text-chart-5 border-chart-5/40">
                   운영자
                 </span>
               )}
@@ -167,7 +183,17 @@ export function Navbar({ balance, userId, searchQuery, onSearch }: NavbarProps) 
           )}
 
           <ThemeToggle />
-          <UserCenter />
+          {/* 프로필 — 알림 종과 동일한 히트 영역 */}
+          {levelMounted && loggedIn && (
+            <Link
+              href="/profile"
+              aria-label="프로필"
+              title="프로필"
+              className="relative flex shrink-0 items-center justify-center rounded-lg p-2.5 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+            >
+              <UserRound className="size-5" aria-hidden />
+            </Link>
+          )}
           {/* 알림 종 — 로그인 시에만 표시 */}
           {levelMounted && loggedIn && <NotificationsBell />}
           <AuthButton />

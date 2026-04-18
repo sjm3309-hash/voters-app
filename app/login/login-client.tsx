@@ -5,7 +5,6 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Eye, EyeOff, Loader2, UserPlus } from "lucide-react";
 import { createClient } from "@/utils/supabase/client";
-import { grantWelcomeBonus } from "@/lib/points";
 import { Input } from "@/components/ui/input";
 import { Logo } from "@/components/common/Logo";
 
@@ -41,8 +40,6 @@ export function LoginClient() {
     try {
       const { data, error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) throw error;
-      // 최초 로그인 시 환영 보너스 (이미 받았으면 무시됨)
-      if (data.user) grantWelcomeBonus(data.user.id);
       // 전체 페이지 새로고침 → 모든 컴포넌트가 새 세션을 읽음
       window.location.href = "/";
     } catch (err: unknown) {

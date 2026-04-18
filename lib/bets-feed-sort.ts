@@ -54,7 +54,7 @@ const STATE_RANK: Record<FeedListState, number> = {
   closed: 2,
 };
 
-export type SmartSortMode = "smart" | "created_desc";
+export type SmartSortMode = "smart" | "created_desc" | "closing_asc";
 
 /**
  * @param poolByMarketId — bet_history 합산 페블 (없으면 0)
@@ -73,6 +73,16 @@ export function sortBetFeedRows<T extends BetFeedSortInput>(
       const na = Number.isFinite(ca) ? ca : 0;
       const nb = Number.isFinite(cb) ? cb : 0;
       if (na !== nb) return nb - na;
+      return a.id.localeCompare(b.id);
+    }
+
+    /** 마감 임박순 — 홈「최신」탭·카테고리 목록과 동일한 기준 */
+    if (mode === "closing_asc") {
+      const ca = Date.parse(a.closing_at);
+      const cb = Date.parse(b.closing_at);
+      const fa = Number.isFinite(ca) ? ca : Number.POSITIVE_INFINITY;
+      const fb = Number.isFinite(cb) ? cb : Number.POSITIVE_INFINITY;
+      if (fa !== fb) return fa - fb;
       return a.id.localeCompare(b.id);
     }
 

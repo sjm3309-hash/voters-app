@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, CheckCircle2, Eye, EyeOff, Loader2, Smartphone } from "lucide-react";
 import { createClient } from "@/utils/supabase/client";
-import { grantWelcomeBonus } from "@/lib/points";
 import { Input } from "@/components/ui/input";
 import { Logo } from "@/components/common/Logo";
 
@@ -126,10 +125,6 @@ export function SignupClient() {
         },
       });
       if (updateError) throw updateError;
-
-      // 가입 완료 → 환영 보너스 1000P 지급 (최초 1회)
-      const uid = verifyData.session.user.id;
-      grantWelcomeBonus(uid);
 
       window.location.href = "/";
     } catch (err: unknown) {

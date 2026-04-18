@@ -17,18 +17,15 @@
 import { earnUserPoints } from "@/lib/points";
 
 // ─── KST 기반 날짜 키 ─────────────────────────────────────────────────────────
-// 리셋 시각: KST 07:00 → UTC 22:00 전날
 
 export function getKSTDay(): string {
   const now = new Date();
-  // UTC ms + 9시간 = KST ms
   const kstMs = now.getTime() + 9 * 60 * 60 * 1000;
   const kst = new Date(kstMs);
-  // 07:00 이전이면 전날로 처리
   if (kst.getUTCHours() < 7) {
     kst.setUTCDate(kst.getUTCDate() - 1);
   }
-  return kst.toISOString().slice(0, 10); // YYYY-MM-DD
+  return kst.toISOString().slice(0, 10);
 }
 
 // ─── 일일 기록 ────────────────────────────────────────────────────────────────
@@ -36,11 +33,11 @@ export function getKSTDay(): string {
 interface DailyRecord {
   attended: boolean;
   firstPost: boolean;
-  commentPoints: number; // 0 ~ 500
+  commentPoints: number;
 }
 
-const DAILY_KEY    = (uid: string, day: string) => `voters.daily.${uid}.${day}`;
-const LIKE_KEY     = "voters.likes.rewards.v1"; // { [postId]: number } — 지급된 10배수 블록 수
+const DAILY_KEY = (uid: string, day: string) => `voters.daily.${uid}.${day}`;
+const LIKE_KEY = "voters.likes.rewards.v1";
 
 function loadDaily(userId: string): DailyRecord {
   if (typeof window === "undefined") return { attended: false, firstPost: false, commentPoints: 0 };
@@ -60,49 +57,38 @@ function saveDaily(userId: string, record: DailyRecord): void {
 
 // ─── 출석 보상 ────────────────────────────────────────────────────────────────
 
-/**
- * 오늘 아직 출석 보상을 받지 않은 경우 500P 지급.
- * @returns 지급 여부
- */
-export function checkAndGrantAttendance(userId: string): boolean {
+/** 오늘 아직 출석 보상을 받지 않은 경우 500P 지급. */
+export async function checkAndGrantAttendance(userId: string): Promise<boolean> {
   if (!userId || userId === "anon") return false;
   const rec = loadDaily(userId);
   if (rec.attended) return false;
   rec.attended = true;
   saveDaily(userId, rec);
-  earnUserPoints(userId, 500, "📅 출석 보너스");
+  await earnUserPoints(userId, 500, "📅 출석 보너스");
   return true;
 }
 
 // ─── 첫 게시글 보상 ───────────────────────────────────────────────────────────
 
-/**
- * 오늘 첫 게시글 작성 시 500P 지급.
- * @returns 지급 여부
- */
-export function checkAndGrantFirstPost(userId: string): boolean {
+export async function checkAndGrantFirstPost(userId: string): Promise<boolean> {
   if (!userId || userId === "anon") return false;
   const rec = loadDaily(userId);
   if (rec.firstPost) return false;
   rec.firstPost = true;
   saveDaily(userId, rec);
-  earnUserPoints(userId, 500, "✍️ 첫 게시글 작성 보너스");
+  await earnUserPoints(userId, 500, "✍️ 첫 게시글 작성 보너스");
   return true;
 }
 
 // ─── 댓글 보상 ────────────────────────────────────────────────────────────────
 
-/**
- * 댓글 작성 시 100P 지급. 하루 최대 500P.
- * @returns 지급 여부
- */
-export function checkAndGrantCommentReward(userId: string): boolean {
+export async function checkAndGrantCommentReward(userId: string): Promise<boolean> {
   if (!userId || userId === "anon") return false;
   const rec = loadDaily(userId);
   if (rec.commentPoints >= 500) return false;
   rec.commentPoints = Math.min(500, rec.commentPoints + 100);
   saveDaily(userId, rec);
-  earnUserPoints(userId, 100, "💬 댓글 작성 보너스");
+  await earnUserPoints(userId, 100, "💬 댓글 작성 보너스");
   return true;
 }
 
@@ -115,27 +101,19 @@ export function remainingCommentRewards(userId: string): number {
 
 // ─── 좋아요 보상 ──────────────────────────────────────────────────────────────
 
-/**
- * 내가 쓴 게시글의 좋아요가 10개 단위를 넘을 때마다 100P 지급.
- *
- * @param authorUserId  게시글 작성자의 포인트 userId (Supabase UUID)
- * @param postId        게시글 ID
- * @param currentLikes  현재 좋아요 수
- * @returns 지급된 포인트 (0이면 새 보상 없음)
- */
-export function checkAndGrantLikeReward(
+export async function checkAndGrantLikeReward(
   authorUserId: string,
   postId: string,
-  currentLikes: number
-): number {
+  currentLikes: number,
+): Promise<number> {
   if (!authorUserId || authorUserId === "anon") return 0;
   if (typeof window === "undefined") return 0;
 
   const raw = window.localStorage.getItem(LIKE_KEY);
   const all: Record<string, number> = raw ? (JSON.parse(raw) as Record<string, number>) : {};
 
-  const rewarded  = all[postId] ?? 0;               // 이미 지급한 10배수 블록
-  const earned    = Math.floor(currentLikes / 10);   // 현재까지 달성한 블록
+  const rewarded = all[postId] ?? 0;
+  const earned = Math.floor(currentLikes / 10);
   const newBlocks = earned - rewarded;
 
   if (newBlocks <= 0) return 0;
@@ -144,10 +122,10 @@ export function checkAndGrantLikeReward(
   window.localStorage.setItem(LIKE_KEY, JSON.stringify(all));
 
   const points = newBlocks * 100;
-  earnUserPoints(
+  await earnUserPoints(
     authorUserId,
     points,
-    `👍 게시글 좋아요 ${earned * 10}개 달성 보너스`
+    `👍 게시글 좋아요 ${earned * 10}개 달성 보너스`,
   );
   return points;
 }

@@ -7,10 +7,10 @@ import {
   getCachedAuthorPoints,
   getCachedAuthorManualLevel,
   COLOR_HEX,
-  SHAPE_KO,
-  COLOR_KO,
+  levelLabelTrackingClassName,
   type ShapeName,
 } from "@/lib/level-system";
+import { cn } from "@/lib/utils";
 
 interface LevelIconProps {
   /** 레벨 번호 직접 지정 (1-56). level과 points 중 하나 필요 */
@@ -168,8 +168,8 @@ export function LevelBadge({ level, points, size = 16, showLabel = false, classN
     >
       <LevelIcon level={level} points={points} size={size} hideTitle />
       {showLabel && (
-        <span className="text-[10px] font-bold leading-none">
-          Lv.{tier.level}
+        <span className={cn("text-[10px] font-bold leading-none", levelLabelTrackingClassName)}>
+          {tier.label}
         </span>
       )}
     </span>
@@ -209,8 +209,7 @@ export function LevelProgress({ level, points, className }: LevelProgressProps) 
     <div className={className}>
       <div className="flex items-center gap-1.5">
         <LevelIcon level={level} points={points} size={16} />
-        <span className="text-sm font-bold text-foreground">{label}</span>
-        <span className="text-xs text-muted-foreground">(Lv.{lv})</span>
+        <span className={cn("text-sm font-bold text-foreground", levelLabelTrackingClassName)}>{label}</span>
         {lv >= 56 && <span className="text-xs text-chart-5 font-bold ml-auto">MAX</span>}
       </div>
       <div className="mt-1.5 h-1.5 w-full rounded-full overflow-hidden" style={{

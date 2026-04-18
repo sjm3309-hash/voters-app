@@ -68,3 +68,29 @@ export function getBetsForMarket(marketId: string): MarketBet[] {
     .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
 }
 
+/**
+ * 서버 bet_history 집계(option_id별 합)와 동일하게 로컬 목록을 덮어씁니다.
+ * 선택지별 합계 행만 두어 차트·풀 표시가 DB와 일치합니다.
+ */
+export function replaceBetsForMarketFromTotals(
+  marketId: string,
+  optionTotals: Record<string, number>,
+): void {
+  const all = loadAll().filter((b) => b.marketId !== marketId);
+  const ts = new Date().toISOString();
+  for (const [optionId, raw] of Object.entries(optionTotals)) {
+    const oid = optionId.trim();
+    const amount = Math.floor(Number(raw));
+    if (!oid || !Number.isFinite(amount) || amount <= 0) continue;
+    all.push({
+      id: `srv-${marketId}-${oid}`,
+      marketId,
+      optionId: oid,
+      amount,
+      author: "",
+      createdAt: ts,
+    });
+  }
+  saveAll(all);
+}
+

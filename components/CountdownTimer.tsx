@@ -95,7 +95,7 @@ export function CountdownTimer({ closingAt, confirmedAt, className }: CountdownT
   const isCritical = phase === "beforeClose" && closeDiffSec > 0 && closeDiffSec <= CRITICAL_SECONDS;
   const timeText =
     phase === "beforeClose"
-      ? `⌛ 베팅 마감까지: ${formatRemainingHMS(closeDiffSec)}`
+      ? `⌛ 참여 마감까지: ${formatRemainingHMS(closeDiffSec)}`
       : phase === "beforeConfirm"
         ? `🔍 결과 확정까지: ${formatRemainingHMS(confirmDiffSec)}`
         : "✅ 결과 확정 완료";

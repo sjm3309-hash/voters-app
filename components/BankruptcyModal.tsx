@@ -172,10 +172,10 @@ export function BankruptcyModal() {
             <div className="rounded-lg border border-chart-5/25 bg-chart-5/10 p-4 text-center">
               <div className="mx-auto mb-2 flex w-fit items-center gap-2 rounded-full bg-background/60 px-3 py-1 text-sm font-semibold text-chart-5 border border-chart-5/25">
                 <Sparkles className="size-4" />
-                당첨 결과
+                획득 결과
               </div>
               <div className="text-3xl font-extrabold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-chart-5 via-fuchsia-500 to-pink-500">
-                🎉 {wonAmount.toLocaleString()} 페블 당첨!
+                🎉 {wonAmount.toLocaleString()} 페블 획득!
               </div>
               <div className="mt-1 text-xs text-muted-foreground">
                 확인을 누르면 모달이 닫히고 잔액이 즉시 반영됩니다.

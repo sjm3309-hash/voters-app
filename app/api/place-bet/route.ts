@@ -1,130 +1,139 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/utils/supabase/server";
 import { createServiceRoleClient } from "@/utils/supabase/service-role";
+import { checkUserModeration } from "@/lib/moderation-check";
 
-const MAX_BET_PER_ONCE = 5000;
-const MAX_BET_PER_DAY = 30000;
-const MAX_BET_PER_WEEK = 150000;
+const MIN_BET_AMOUNT = 100;
+const BET_STEP = 100;
 
-type Body = {
-  marketId: string;
-  optionId: string;
-  amount: number;
-};
+type BetLeg = { optionId: string; amount: number };
+type Body = { marketId: string; bets: BetLeg[] };
 
-function startOfUtcDay(d = new Date()): Date {
-  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 0, 0, 0, 0));
-}
-
-function startOfUtcWeekMonday(d = new Date()): Date {
-  // Monday 00:00 UTC
-  const day = d.getUTCDay(); // 0 Sun ... 6 Sat
-  const diffToMonday = (day + 6) % 7; // Mon=0, Sun=6
-  const monday = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 0, 0, 0, 0));
-  monday.setUTCDate(monday.getUTCDate() - diffToMonday);
-  return monday;
+function normalizeBetLegs(raw: unknown): { legs: BetLeg[]; total: number; error?: string } {
+  if (!Array.isArray(raw) || raw.length === 0) {
+    return { legs: [], total: 0, error: "bets_required" };
+  }
+  const byOption = new Map<string, number>();
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const optionId = String((item as { optionId?: unknown }).optionId ?? "").trim();
+    const floored = Math.floor(Number((item as { amount?: unknown }).amount));
+    if (!optionId || !Number.isFinite(floored) || floored <= 0) continue;
+    const stepped = Math.floor(floored / BET_STEP) * BET_STEP;
+    if (stepped < MIN_BET_AMOUNT) continue;
+    byOption.set(optionId, (byOption.get(optionId) ?? 0) + stepped);
+  }
+  const legs: BetLeg[] = [];
+  let total = 0;
+  for (const [optionId, amount] of byOption) {
+    legs.push({ optionId, amount });
+    total += amount;
+  }
+  if (legs.length === 0 || total <= 0) return { legs: [], total: 0, error: "no_valid_bets" };
+  return { legs, total };
 }
 
 export async function POST(request: Request) {
   try {
+    // ── 1. 인증 ──────────────────────────────────────────────
     const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
+    const { data: { user } } = await supabase.auth.getUser();
     if (!user?.id) {
       return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
     }
 
+    // ── 2. 요청 파싱 ─────────────────────────────────────────
     const body = (await request.json().catch(() => null)) as Partial<Body> | null;
     const marketId = String(body?.marketId ?? "").trim();
-    const optionId = String(body?.optionId ?? "").trim();
-    const amount = Math.floor(Number(body?.amount));
+    const normalized = normalizeBetLegs(body?.bets);
 
-    if (!marketId || !optionId || !Number.isFinite(amount) || amount <= 0) {
-      return NextResponse.json({ ok: false, error: "invalid_request" }, { status: 400 });
-    }
-
-    if (amount > MAX_BET_PER_ONCE) {
+    if (!marketId || normalized.error === "bets_required") {
       return NextResponse.json(
-        { ok: false, error: "limit_once", message: "1회 최대 베팅 금액은 5,000 페블입니다." },
+        { ok: false, error: "invalid_request", message: "베팅 정보가 없습니다." },
+        { status: 400 },
+      );
+    }
+    if (normalized.legs.length === 0 || normalized.error === "no_valid_bets") {
+      return NextResponse.json(
+        {
+          ok: false,
+          error: "invalid_bets",
+          message: `각 선택지에 ${MIN_BET_AMOUNT.toLocaleString()} 페블 이상, ${BET_STEP.toLocaleString()} 단위로 입력해 주세요.`,
+        },
         { status: 400 },
       );
     }
 
-    const now = new Date();
-    const todayStart = startOfUtcDay(now).toISOString();
-    const weekStart = startOfUtcWeekMonday(now).toISOString();
+    // ── 3. 제재 확인 ─────────────────────────────────────────
+    const mod = await checkUserModeration(user.id);
+    if (mod.blocked) {
+      return NextResponse.json({ ok: false, error: mod.reason, message: mod.message }, { status: 403 });
+    }
 
-    // RLS 정책에 막히는 환경도 있어, 읽기/집계는 서비스 롤로 처리
-    const svc = createServiceRoleClient();
-    const { data: hist, error: hErr } = await svc
-      .from("bet_history")
-      .select("amount, created_at")
-      .eq("user_id", user.id)
-      .gte("created_at", weekStart);
+    // ── 4. Service Role 클라이언트 ───────────────────────────
+    let svc: ReturnType<typeof createServiceRoleClient>;
+    try {
+      svc = createServiceRoleClient();
+    } catch (envErr) {
+      const msg = envErr instanceof Error ? envErr.message : String(envErr);
+      return NextResponse.json({ ok: false, error: msg, code: "SERVICE_ROLE_CONFIG" }, { status: 503 });
+    }
 
-    if (hErr) {
+    // ── 5. 창작자 베팅 차단 ──────────────────────────────────
+    const { data: creatorCheck } = await svc
+      .from("bets")
+      .select("user_id")
+      .eq("id", marketId)
+      .maybeSingle();
+
+    if (creatorCheck && (creatorCheck as { user_id?: string }).user_id === user.id) {
       return NextResponse.json(
-        { ok: false, error: "history_query_failed", details: { message: hErr.message, code: hErr.code } },
-        { status: 500 },
+        { ok: false, error: "creator_cannot_bet", message: "보트 창작자는 자신의 보트에 베팅할 수 없습니다." },
+        { status: 403 },
       );
     }
 
-    let sumToday = 0;
-    let sumWeek = 0;
-    const todayMs = Date.parse(todayStart);
-    for (const r of (hist ?? []) as { amount?: number | null; created_at?: string | null }[]) {
-      const a = Number(r.amount ?? 0);
-      if (!Number.isFinite(a) || a <= 0) continue;
-      sumWeek += a;
-      const t = r.created_at ? Date.parse(r.created_at) : NaN;
-      if (Number.isFinite(t) && t >= todayMs) sumToday += a;
-    }
-
-    if (sumToday + amount > MAX_BET_PER_DAY) {
-      return NextResponse.json(
-        { ok: false, error: "limit_day", message: "일일 베팅 한도(30,000 페블)를 초과했습니다. 내일 다시 참여해 주세요." },
-        { status: 400 },
-      );
-    }
-    if (sumWeek + amount > MAX_BET_PER_WEEK) {
-      return NextResponse.json(
-        { ok: false, error: "limit_week", message: "주간 베팅 한도를 초과했습니다." },
-        { status: 400 },
-      );
-    }
-
-    // 실제 베팅 기록 저장 (서비스 롤로 upsert/insert)
-    const { error: insErr } = await svc.from("bet_history").insert({
-      market_id: marketId,
-      option_id: optionId,
-      user_id: user.id,
-      amount,
+    // ── 6. 단일 RPC 호출 (모든 검증·차감·기록을 DB 함수가 원자적으로 처리) ──
+    const { data: rpcData, error: rpcError } = await svc.rpc("place_bets_secure", {
+      p_user_id: user.id,
+      p_boat_id: marketId,
+      p_bets: normalized.legs.map((leg) => ({
+        option_id: leg.optionId,
+        amount: leg.amount,
+      })),
     });
 
-    if (insErr) {
+    if (rpcError) {
+      // PostgreSQL RAISE EXCEPTION 메시지를 그대로 클라이언트에 전달
+      const msg = rpcError.message ?? "베팅 처리 중 오류가 발생했습니다.";
+      const isClientError =
+        msg.includes("insufficient") ||
+        msg.includes("limit") ||
+        msg.includes("closed") ||
+        msg.includes("finalized") ||
+        msg.includes("invalid") ||
+        msg.includes("too_early");
       return NextResponse.json(
-        { ok: false, error: "insert_failed", details: { message: insErr.message, code: insErr.code } },
-        { status: 500 },
+        { ok: false, error: rpcError.code ?? "rpc_error", message: msg },
+        { status: isClientError ? 400 : 500 },
       );
     }
+
+    // ── 5. 성공 응답 ─────────────────────────────────────────
+    const result = rpcData as {
+      remaining_balance?: number;
+      option_totals?: Record<string, number>;
+      my_option_totals?: Record<string, number>;
+    } | null;
 
     return NextResponse.json({
       ok: true,
-      limits: {
-        perOnce: MAX_BET_PER_ONCE,
-        perDay: MAX_BET_PER_DAY,
-        perWeek: MAX_BET_PER_WEEK,
-      },
-      totals: {
-        today: sumToday + amount,
-        week: sumWeek + amount,
-      },
+      remainingBalance: result?.remaining_balance ?? null,
+      optionTotals: result?.option_totals ?? {},
+      myOptionTotals: result?.my_option_totals ?? {},
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     return NextResponse.json({ ok: false, error: msg }, { status: 500 });
   }
 }
-

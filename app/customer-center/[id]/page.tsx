@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Headphones, Heart, Loader2, Lock } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Headphones, Heart, Loader2, Lock, MessageSquare } from "lucide-react";
+import { AdminAuthorBadge } from "@/components/admin-author-badge";
 import { Navbar } from "@/components/navbar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -112,7 +113,12 @@ export default function CustomerCenterDetailPage() {
                   {post.title}
                 </h1>
                 <p className="text-xs text-muted-foreground">
-                  {post.author_display_name ?? "익명"} · {formatTime(post.created_at)}
+                  <AdminAuthorBadge
+                    name={post.author_display_name ?? "익명"}
+                    userId={post.user_id}
+                    iconSize={11}
+                  />
+                  {" · "}{formatTime(post.created_at)}
                 </p>
               </div>
 
@@ -145,6 +151,29 @@ export default function CustomerCenterDetailPage() {
             <div className="whitespace-pre-wrap text-sm text-foreground leading-relaxed">
               {post.content}
             </div>
+
+            {/* 운영자 답변 */}
+            {post.admin_reply ? (
+              <div className="rounded-xl border border-chart-5/30 bg-chart-5/5 p-4 space-y-2">
+                <div className="flex items-center gap-2 text-chart-5">
+                  <CheckCircle2 className="size-4" />
+                  <span className="text-sm font-bold">운영자 답변</span>
+                  {post.admin_replied_at && (
+                    <span className="text-xs text-muted-foreground ml-auto">
+                      {formatTime(post.admin_replied_at)}
+                    </span>
+                  )}
+                </div>
+                <p className="text-sm text-foreground whitespace-pre-wrap leading-relaxed">
+                  {post.admin_reply}
+                </p>
+              </div>
+            ) : post.category === "inquiry" ? (
+              <div className="rounded-xl border border-border/40 bg-secondary/10 p-4 flex items-center gap-2 text-muted-foreground">
+                <MessageSquare className="size-4 shrink-0" />
+                <p className="text-sm">운영자가 확인 후 답변을 드릴 예정입니다. 잠시 기다려 주세요.</p>
+              </div>
+            ) : null}
           </div>
         )}
       </main>

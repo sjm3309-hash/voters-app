@@ -17,7 +17,6 @@ export const MARKET_CATEGORIES = [
   { id: "crypto",   label: "크립토" },
   { id: "politics", label: "정치" },
   { id: "game",     label: "게임" },
-  { id: "suggest",  label: "건의" },
 ] as const;
 
 export type MarketCategoryId = typeof MARKET_CATEGORIES[number]["id"];
@@ -48,7 +47,7 @@ export interface UserMarket {
   authorName: string;
   // ─── 정산 ───────────────────────────────────────────────────────────────
   winningOptionId?: string;  // 정산된 당첨 선택지 ID
-  settledAt?: string;        // 정산 일시 (ISO string)
+  confirmedAt?: string;       // 결과 확정 일시 (ISO string, DB confirmed_at와 동일)
   adminFeeCollected?: number;
   creatorFeeCollected?: number;
 }

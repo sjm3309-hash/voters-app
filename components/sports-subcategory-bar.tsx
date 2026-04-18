@@ -2,14 +2,14 @@
 
 import { cn } from "@/lib/utils";
 import { useDragScroll } from "@/hooks/use-drag-scroll";
+import { SUBCATEGORIES } from "@/lib/subcategories";
+
+const BASE = SUBCATEGORIES.sports;
 
 export const SPORTS_SUBCATEGORIES = [
   { id: "all" as const, label: "전체" },
-  { id: "baseball_kr" as const, label: "국내야구" },
-  { id: "football" as const, label: "해외축구" },
-  { id: "basketball" as const, label: "농구" },
-  { id: "other" as const, label: "기타" },
-] as const;
+  ...BASE,
+] as const satisfies { id: string; label: string }[];
 
 export type SportsSubCategoryId = (typeof SPORTS_SUBCATEGORIES)[number]["id"];
 
@@ -44,7 +44,7 @@ export function SportsSubCategoryBar({
             <button
               key={item.id}
               type="button"
-              onClick={() => onSelect(item.id)}
+              onClick={() => onSelect(item.id as SportsSubCategoryId)}
               className={cn(
                 "shrink-0 rounded-full px-3.5 py-1.5 text-xs font-semibold transition-all duration-200",
                 active
@@ -60,4 +60,3 @@ export function SportsSubCategoryBar({
     </div>
   );
 }
-

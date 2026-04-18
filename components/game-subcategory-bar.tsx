@@ -2,21 +2,20 @@
 
 import { cn } from "@/lib/utils";
 import { useDragScroll } from "@/hooks/use-drag-scroll";
+import { SUBCATEGORIES } from "@/lib/subcategories";
+
+const BASE = SUBCATEGORIES.game;
 
 export const GAME_SUBCATEGORIES = [
   { id: "all" as const, label: "전체" },
-  { id: "lol" as const, label: "LoL" },
-  { id: "valorant" as const, label: "발로란트" },
-  { id: "starcraft" as const, label: "스타크래프트" },
-  { id: "other" as const, label: "기타" },
-] as const;
+  ...BASE,
+] as const satisfies { id: string; label: string }[];
 
 export type GameSubCategoryId = (typeof GAME_SUBCATEGORIES)[number]["id"];
 
 interface GameSubCategoryBarProps {
   selected: GameSubCategoryId;
   onSelect: (id: GameSubCategoryId) => void;
-  /** 부모에서 애니메이션용으로 감쌀 때 레이아웃 id */
   className?: string;
 }
 
@@ -45,7 +44,7 @@ export function GameSubCategoryBar({
             <button
               key={item.id}
               type="button"
-              onClick={() => onSelect(item.id)}
+              onClick={() => onSelect(item.id as GameSubCategoryId)}
               className={cn(
                 "shrink-0 rounded-full px-3.5 py-1.5 text-xs font-semibold transition-all duration-200",
                 active
@@ -61,4 +60,3 @@ export function GameSubCategoryBar({
     </div>
   );
 }
-

@@ -3,9 +3,10 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, LayoutDashboard, Loader2 } from "lucide-react";
+import { ArrowLeft, LayoutDashboard, Loader2, Search, X } from "lucide-react";
 import { Navbar } from "@/components/navbar";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { useIsAdmin } from "@/hooks/use-is-admin";
 import { useUserPointsBalance } from "@/lib/points";
 
@@ -27,6 +28,8 @@ export function BettingAdminClient() {
   const [markets, setMarkets] = useState<AdminMarketRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
+  const [listNonce, setListNonce] = useState(0);
+  const [query, setQuery] = useState("");
 
   useEffect(() => {
     if (adminLoading) return;
@@ -61,7 +64,7 @@ export function BettingAdminClient() {
     return () => {
       cancelled = true;
     };
-  }, [adminLoading, isAdmin, router]);
+  }, [adminLoading, isAdmin, router, listNonce]);
 
   if (adminLoading || (!loading && !isAdmin)) return null;
 
@@ -78,7 +81,7 @@ export function BettingAdminClient() {
             <ArrowLeft className="size-5" />
           </button>
           <LayoutDashboard className="size-5 text-chart-5" />
-          <h1 className="text-lg font-bold text-foreground">베팅 상세 통계</h1>
+          <h1 className="text-lg font-bold text-foreground">보트 상세 통계</h1>
           <span className="text-xs px-2 py-0.5 rounded-full bg-chart-5/15 text-chart-5 border border-chart-5/30 font-semibold ml-1">
             운영자 전용
           </span>
@@ -89,6 +92,26 @@ export function BettingAdminClient() {
         <p className="text-sm text-muted-foreground mb-4">
           DB에 저장된 동기화 보트 전체입니다. 메인 피드(`/api/bets-feed`)와 달리 종료 후 오래된 보트도 표시합니다.
         </p>
+
+        {/* 검색창 */}
+        <div className="relative mb-4 max-w-sm">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground pointer-events-none" />
+          <Input
+            placeholder="제목 또는 카테고리 검색…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="pl-8 pr-8 h-8 text-sm"
+          />
+          {query && (
+            <button
+              type="button"
+              onClick={() => setQuery("")}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+            >
+              <X className="size-3.5" />
+            </button>
+          )}
+        </div>
 
         {loading && (
           <div className="flex justify-center py-16">
@@ -115,14 +138,24 @@ export function BettingAdminClient() {
                   </tr>
                 </thead>
                 <tbody>
-                  {markets.length === 0 ? (
-                    <tr>
-                      <td colSpan={4} className="px-3 py-8 text-center text-muted-foreground">
-                        보트가 없습니다.
-                      </td>
-                    </tr>
-                  ) : (
-                    markets.map((m) => (
+                  {(() => {
+                    const q = query.trim().toLowerCase();
+                    const filtered = q
+                      ? markets.filter(
+                          (m) =>
+                            m.question.toLowerCase().includes(q) ||
+                            m.category.toLowerCase().includes(q) ||
+                            (m.subCategory ?? "").toLowerCase().includes(q),
+                        )
+                      : markets;
+                    if (filtered.length === 0) return (
+                      <tr>
+                        <td colSpan={4} className="px-3 py-8 text-center text-muted-foreground">
+                          {q ? `"${query}"에 해당하는 보트가 없습니다.` : "보트가 없습니다."}
+                        </td>
+                      </tr>
+                    );
+                    return filtered.map((m) => (
                       <tr
                         key={m.id}
                         className="border-b border-border/40 hover:bg-secondary/30 transition-colors"
@@ -150,8 +183,8 @@ export function BettingAdminClient() {
                           </Button>
                         </td>
                       </tr>
-                    ))
-                  )}
+                    ));
+                  })()}
                 </tbody>
               </table>
             </div>

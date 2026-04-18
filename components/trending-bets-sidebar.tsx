@@ -25,9 +25,12 @@ function formatTimeLeft(endsAt: Date): string {
 export function TrendingBetsSidebar({
   markets,
   className,
+  /** 목록 화면 복귀용 — 보트 상세에 `next` 로 전달 */
+  listReturnUrl,
 }: {
   markets: Market[];
   className?: string;
+  listReturnUrl?: string;
 }) {
   return (
     <Card
@@ -41,7 +44,7 @@ export function TrendingBetsSidebar({
           <span aria-hidden className="select-none">
             🔥
           </span>
-          실시간 인기 베팅
+          실시간 인기 보트
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-2 pt-0">
@@ -54,7 +57,11 @@ export function TrendingBetsSidebar({
             {markets.map((m) => (
               <li key={m.id}>
                 <Link
-                  href={`/market/${m.id}`}
+                  href={
+                    listReturnUrl
+                      ? `/market/${m.id}?${new URLSearchParams({ next: listReturnUrl }).toString()}`
+                      : `/market/${m.id}`
+                  }
                   className="block rounded-xl border border-border/50 bg-secondary/25 px-3 py-2.5 text-left transition-all duration-200 hover:border-chart-5/35 hover:bg-secondary/45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-chart-5/40"
                 >
                   <p className="text-sm font-semibold text-foreground line-clamp-2 leading-snug">

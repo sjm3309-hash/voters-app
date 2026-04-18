@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/utils/supabase/service-role";
 import { getTeamColor } from "@/lib/team-colors";
 import { officialSyncedBetColumns, validateAdminUserId } from "@/lib/admin-sync-bets";
+import { externalBetSyncSkippedResponse, isExternalBetSyncDisabled } from "@/lib/external-bet-sync";
 import { getMockSyncBetRowsRaw, useMockPredictionData } from "@/lib/mock-prediction-data";
 
 const CONFIRMED_AFTER_MS = 3 * 60 * 60 * 1000;
@@ -25,6 +26,10 @@ export async function POST() {
     const admin = validateAdminUserId();
     if (!admin.ok) {
       return NextResponse.json({ ok: false, errors: admin.errors }, { status: 400 });
+    }
+
+    if (isExternalBetSyncDisabled()) {
+      return externalBetSyncSkippedResponse();
     }
 
     if (useMockPredictionData()) {

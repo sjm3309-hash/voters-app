@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { cn } from "@/lib/utils";
+import { useDragScroll } from "@/hooks/use-drag-scroll";
 import {
   Flame,
   Sparkles,
@@ -63,8 +64,8 @@ export const ALL_CATEGORIES: { id: string; label: string; icon: React.ElementTyp
 
 type SortId = (typeof SORT_FILTERS)[number]["id"];
 export type CategoryId = (typeof VISIBLE_CATEGORIES)[number]["id"] | "all";
-/** 정렬·카테고리 탭 + 건의 전용 페이지(`/suggest`)와 맞춘 필터 */
-export type FilterId = SortId | CategoryId | "suggest";
+/** 정렬 탭 + 카테고리 탭 (고객센터는 NAV_TABS 링크로 별도 처리) */
+export type FilterId = SortId | CategoryId;
 
 interface CategoryFilterProps {
   selected: FilterId;
@@ -86,6 +87,8 @@ export function isCategoryFilter(id: FilterId): id is Exclude<FilterId, SortId> 
 export function CategoryFilter({ selected, onSelect }: CategoryFilterProps) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
+  const { ref: dragScrollRef, handlers: dragScrollHandlers } =
+    useDragScroll<HTMLDivElement>();
 
   // 전체 팝오버에서 직접 노출되지 않는 오버플로 카테고리가 선택됐을 때 전체 버튼 강조
   const visibleIds = VISIBLE_CATEGORIES.map((c) => c.id as string);
@@ -95,15 +98,22 @@ export function CategoryFilter({ selected, onSelect }: CategoryFilterProps) {
     !visibleIds.includes(selected);
 
   const btnBase =
-    "flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 whitespace-nowrap";
+    "flex shrink-0 items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 whitespace-nowrap";
   const btnActive =
     "bg-chart-5 text-primary-foreground shadow-lg shadow-chart-5/25";
   const btnIdle =
     "bg-secondary text-muted-foreground hover:bg-secondary/80 hover:text-foreground border border-border/50";
 
   return (
-    <div className="w-full overflow-x-auto scrollbar-hide">
-      <div className="flex items-center gap-2.5 min-w-max">
+    <div
+      ref={dragScrollRef}
+      className={cn(
+        "w-full overflow-x-auto scrollbar-hide cursor-grab active:cursor-grabbing select-none touch-pan-x",
+        "[scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden",
+      )}
+      {...dragScrollHandlers}
+    >
+      <div className="flex items-center gap-2.5 min-w-max py-0.5">
 
         {/* ── 정렬 탭 ── */}
         {SORT_FILTERS.map((f) => (
@@ -132,7 +142,7 @@ export function CategoryFilter({ selected, onSelect }: CategoryFilterProps) {
           </button>
         ))}
 
-        {/* ── 건의 (페이지 이동 탭) ── */}
+        {/* ── 고객센터 등 페이지 이동 탭 ── */}
         {NAV_TABS.map((t) => (
           <Link
             key={t.id}

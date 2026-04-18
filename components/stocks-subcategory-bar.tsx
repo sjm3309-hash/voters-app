@@ -2,12 +2,14 @@
 
 import { cn } from "@/lib/utils";
 import { useDragScroll } from "@/hooks/use-drag-scroll";
+import { SUBCATEGORIES } from "@/lib/subcategories";
+
+const BASE = SUBCATEGORIES.stocks;
 
 export const STOCKS_SUBCATEGORIES = [
   { id: "all" as const, label: "전체" },
-  { id: "domestic" as const, label: "국내" },
-  { id: "overseas" as const, label: "해외" },
-] as const;
+  ...BASE,
+] as const satisfies { id: string; label: string }[];
 
 export type StocksSubCategoryId = (typeof STOCKS_SUBCATEGORIES)[number]["id"];
 
@@ -42,7 +44,7 @@ export function StocksSubCategoryBar({
             <button
               key={item.id}
               type="button"
-              onClick={() => onSelect(item.id)}
+              onClick={() => onSelect(item.id as StocksSubCategoryId)}
               className={cn(
                 "shrink-0 rounded-full px-3.5 py-1.5 text-xs font-semibold transition-all duration-200",
                 active
@@ -58,4 +60,3 @@ export function StocksSubCategoryBar({
     </div>
   );
 }
-

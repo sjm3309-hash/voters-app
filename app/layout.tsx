@@ -1,9 +1,14 @@
 import type { Metadata } from 'next'
 import { Geist, Geist_Mono } from 'next/font/google'
+import Script from 'next/script'
 import { Analytics } from '@vercel/analytics/next'
 import { ThemeProvider } from '@/components/theme-provider'
 import { BankruptcyModal } from "@/components/BankruptcyModal"
+import { DailyRewardTrigger } from "@/components/daily-reward-trigger"
+import { Toaster } from "@/components/ui/sonner"
 import './globals.css'
+
+const ADSENSE_CLIENT = process.env.NEXT_PUBLIC_ADSENSE_CLIENT;
 
 const _geist = Geist({ subsets: ["latin"] });
 const _geistMono = Geist_Mono({ subsets: ["latin"] });
@@ -46,9 +51,20 @@ export default function RootLayout({
   disableTransitionOnChange={false}
 >
           {children}
+          <Toaster richColors closeButton position="top-center" />
           <BankruptcyModal />
+          <DailyRewardTrigger />
         </ThemeProvider>
         {process.env.NODE_ENV === 'production' && <Analytics />}
+        {/* Google AdSense — NEXT_PUBLIC_ADSENSE_CLIENT 설정 시 자동 활성화 */}
+        {ADSENSE_CLIENT && (
+          <Script
+            async
+            src={`https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${ADSENSE_CLIENT}`}
+            crossOrigin="anonymous"
+            strategy="lazyOnload"
+          />
+        )}
       </body>
     </html>
   )

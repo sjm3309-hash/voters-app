@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeft, ImagePlus } from "lucide-react";
+import { ArrowLeft, ImagePlus, Loader2 } from "lucide-react";
 import { Navbar } from "@/components/navbar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -16,19 +16,21 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { loadBoardPosts, saveBoardPosts, type BoardCategoryId, type BoardPost } from "@/lib/board";
+import { type BoardCategoryId } from "@/lib/board";
+import { safeReturnPath } from "@/lib/board-navigation";
 import { checkAndGrantFirstPost } from "@/lib/daily-rewards";
 import { useUserPointsBalance } from "@/lib/points";
+import { getSubCategories, hasSubCategories, defaultSubCategory } from "@/lib/subcategories";
 import { createClient } from "@/utils/supabase/client";
+import { toast } from "sonner";
 
 const categoryOptions: { value: BoardCategoryId; label: string }[] = [
-  { value: "sports",  label: "스포츠" },
-  { value: "fun",     label: "재미" },
-  { value: "stocks",  label: "주식" },
-  { value: "crypto",  label: "크립토" },
-  { value: "politics",label: "정치" },
-  { value: "game",    label: "게임" },
-  { value: "suggest", label: "건의" },
+  { value: "sports",   label: "⚽ 스포츠" },
+  { value: "fun",      label: "😄 재미" },
+  { value: "stocks",   label: "📈 주식" },
+  { value: "crypto",   label: "🪙 크립토" },
+  { value: "politics", label: "🏛️ 정치" },
+  { value: "game",     label: "🎮 게임" },
 ];
 
 function stripHtml(html: string) {
@@ -50,6 +52,7 @@ export function BoardWriteClient() {
   const { userId, points: userBalance } = useUserPointsBalance();
   const [authorName, setAuthorName] = useState("익명");
   const draftKey = useMemo(() => `voters.board.draft.${userId || "anon"}`, [userId]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     const supabase = createClient();
@@ -71,7 +74,16 @@ export function BoardWriteClient() {
     return isBoardCategoryId(c) ? c : ("fun" as BoardCategoryId);
   }, [searchParams]);
 
+  const listHref = useMemo(
+    () => safeReturnPath(searchParams.get("next"), "/"),
+    [searchParams],
+  );
+  const nextPreserve = searchParams.get("next");
+
   const [category, setCategory] = useState<BoardCategoryId>(initialCategory);
+  const [subCategory, setSubCategory] = useState<string>(
+    () => defaultSubCategory(initialCategory) ?? "other"
+  );
   const [title, setTitle] = useState("");
   const [contentHtml, setContentHtml] = useState("");
   const [images, setImages] = useState<string[]>([]);
@@ -79,11 +91,62 @@ export function BoardWriteClient() {
 
   useEffect(() => {
     setCategory(initialCategory);
+    setSubCategory(defaultSubCategory(initialCategory) ?? "other");
   }, [initialCategory]);
 
   const plainText = useMemo(() => stripHtml(contentHtml), [contentHtml]);
   const hasBody = plainText.length > 0 || images.length > 0;
-  const canSubmit = !!title.trim() && hasBody;
+  const canSubmit = !!title.trim() && hasBody && !isSubmitting;
+
+  const handleSubmit = async () => {
+    if (!canSubmit) return;
+    if (authorName === "익명") {
+      toast.error("로그인 후 게시글을 작성할 수 있습니다.");
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const payload = {
+        title: title.trim(),
+        content: plainText || "(이미지)",
+        contentHtml: contentHtml.trim() ? contentHtml : undefined,
+        category,
+        subCategory: hasSubCategories(category) ? subCategory : null,
+        thumbnail: images[0],
+        images: images.length > 0 ? images : undefined,
+      };
+
+      const res = await fetch("/api/board-posts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify(payload),
+      });
+      const json = await res.json();
+
+      if (!res.ok || !json.ok) {
+        toast.error(json.message ?? "게시글 등록에 실패했습니다.");
+        return;
+      }
+
+      // 오늘 첫 게시글 작성 보상 (500P)
+      void checkAndGrantFirstPost(userId);
+
+      toast.success("게시글이 등록되었습니다!");
+
+      const detailQs = new URLSearchParams();
+      if (nextPreserve) detailQs.set("next", nextPreserve);
+      router.push(
+        `/board/${json.id}${detailQs.toString() ? `?${detailQs}` : ""}`,
+      );
+    } catch (e) {
+      console.error(e);
+      toast.error("서버 오류가 발생했습니다.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -99,7 +162,7 @@ export function BoardWriteClient() {
           {/* Content */}
           <div className="min-w-0">
             <div className="max-w-3xl mx-auto">
-              <Button variant="ghost" onClick={() => router.push("/")} className="-ml-2 mb-4">
+              <Button variant="ghost" onClick={() => router.push(listHref)} className="-ml-2 mb-4">
                 <ArrowLeft className="size-4" />
                 목록
               </Button>
@@ -110,13 +173,21 @@ export function BoardWriteClient() {
                 </CardHeader>
                 <CardContent className="space-y-6">
                   {authorName === "익명" && (
-                    <div className="rounded-lg border border-border/50 bg-secondary/10 px-4 py-3 text-sm text-muted-foreground">
-                      로그인하지 않아도 글쓰기는 가능하며, 작성자는 <span className="font-semibold text-foreground">익명</span>으로 표시됩니다.
+                    <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-700 dark:text-amber-400">
+                      ⚠️ 로그인 후 게시글을 작성할 수 있습니다.
                     </div>
                   )}
-                  <div className="space-y-2">
-                    <Label>카테고리(상위탭)</Label>
-                    <Select value={category} onValueChange={(v) => setCategory(v as BoardCategoryId)}>
+
+                  <div className="space-y-3">
+                    <Label>카테고리</Label>
+                    <Select
+                      value={category}
+                      onValueChange={(v) => {
+                        const cat = v as BoardCategoryId;
+                        setCategory(cat);
+                        setSubCategory(defaultSubCategory(cat) ?? "other");
+                      }}
+                    >
                       <SelectTrigger className="w-full">
                         <SelectValue placeholder="카테고리를 선택하세요" />
                       </SelectTrigger>
@@ -128,6 +199,29 @@ export function BoardWriteClient() {
                         ))}
                       </SelectContent>
                     </Select>
+
+                    {/* 세부 카테고리 — 해당 카테고리에만 표시 */}
+                    {hasSubCategories(category) && (
+                      <div className="rounded-xl border border-border/40 bg-secondary/10 p-3 space-y-2">
+                        <p className="text-xs font-semibold text-muted-foreground">세부 카테고리</p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {getSubCategories(category).map((sub) => (
+                            <button
+                              key={sub.id}
+                              type="button"
+                              onClick={() => setSubCategory(sub.id)}
+                              className={`px-3 py-1 rounded-full text-xs font-medium border transition-all ${
+                                subCategory === sub.id
+                                  ? "bg-chart-5/20 border-chart-5/60 text-chart-5"
+                                  : "bg-background border-border/40 text-muted-foreground hover:border-border hover:text-foreground"
+                              }`}
+                            >
+                              {sub.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   <div className="space-y-2">
@@ -136,6 +230,7 @@ export function BoardWriteClient() {
                       value={title}
                       onChange={(e) => setTitle(e.target.value)}
                       placeholder="제목을 입력하세요"
+                      maxLength={100}
                     />
                   </div>
 
@@ -175,7 +270,7 @@ export function BoardWriteClient() {
                         e.currentTarget.value = "";
                       }}
                     />
-                    {imageError && <p className="text-xs text-neon-red">{imageError}</p>}
+                    {imageError && <p className="text-xs text-destructive">{imageError}</p>}
 
                     {images.length > 0 ? (
                       <div className="grid grid-cols-3 gap-2">
@@ -203,7 +298,7 @@ export function BoardWriteClient() {
                     )}
                   </div>
 
-                  <div className="flex justify-end gap-2">
+                  <div className="flex flex-wrap justify-end gap-2">
                     <Button
                       type="button"
                       variant="outline"
@@ -237,6 +332,7 @@ export function BoardWriteClient() {
                           savedAt: new Date().toISOString(),
                         };
                         window.localStorage.setItem(draftKey, JSON.stringify(draft));
+                        toast.success("임시 저장되었습니다.");
                       }}
                     >
                       임시 저장
@@ -246,7 +342,7 @@ export function BoardWriteClient() {
                       variant="outline"
                       onClick={() => {
                         const raw = window.localStorage.getItem(draftKey);
-                        if (!raw) return;
+                        if (!raw) { toast.info("임시 저장된 글이 없습니다."); return; }
                         try {
                           const d = JSON.parse(raw) as {
                             category?: BoardCategoryId;
@@ -258,6 +354,7 @@ export function BoardWriteClient() {
                           setTitle(d.title ?? "");
                           setContentHtml(d.contentHtml ?? "");
                           setImages(Array.isArray(d.images) ? d.images : []);
+                          toast.success("임시 저장된 글을 불러왔습니다.");
                         } catch {
                           // ignore
                         }
@@ -265,37 +362,22 @@ export function BoardWriteClient() {
                     >
                       임시 저장 불러오기
                     </Button>
-                    <Button variant="outline" onClick={() => router.push("/")}>
+                    <Button variant="outline" onClick={() => router.push(listHref)}>
                       취소
                     </Button>
                     <Button
-                      onClick={() => {
-                        const plain = plainText;
-                        if (!title.trim() || !hasBody) return;
-                        const id = `${Date.now()}`;
-                        const next: BoardPost = {
-                          id,
-                          title: title.trim(),
-                          content: plain || "(이미지)",
-                          contentHtml: contentHtml.trim() ? contentHtml : undefined,
-                          category,
-                          images: images.length > 0 ? images : undefined,
-                          thumbnail: images[0],
-                          commentCount: 0,
-                          author: authorName,
-                          createdAt: new Date().toISOString(),
-                        };
-                        const prev = loadBoardPosts();
-                        const merged = [next, ...prev];
-                        saveBoardPosts(merged);
-                        // 오늘 첫 게시글 작성 보상 (500P)
-                        checkAndGrantFirstPost(userId);
-                        router.push(`/board/${id}`);
-                      }}
+                      onClick={handleSubmit}
                       disabled={!canSubmit}
                       className="bg-chart-5 text-primary-foreground hover:bg-chart-5/90"
                     >
-                      등록
+                      {isSubmitting ? (
+                        <>
+                          <Loader2 className="size-4 animate-spin" />
+                          등록 중...
+                        </>
+                      ) : (
+                        "등록"
+                      )}
                     </Button>
                   </div>
                 </CardContent>
@@ -312,4 +394,3 @@ export function BoardWriteClient() {
     </div>
   );
 }
-

@@ -5,6 +5,7 @@ import {
   officialSyncedBetColumns,
   validateAdminUserId,
 } from "@/lib/admin-sync-bets";
+import { externalBetSyncSkippedResponse, isExternalBetSyncDisabled } from "@/lib/external-bet-sync";
 
 type PandaMatch = {
   id: number;
@@ -45,6 +46,10 @@ export async function POST() {
         { ok: false, errors: admin.errors },
         { status: 400 },
       );
+    }
+
+    if (isExternalBetSyncDisabled()) {
+      return externalBetSyncSkippedResponse();
     }
 
     /**

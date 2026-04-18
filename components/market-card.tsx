@@ -12,6 +12,7 @@ import {
   getMarketLifecyclePhase,
   type MarketLifecyclePhase,
 } from "@/lib/market-lifecycle";
+import { normalizeHex6 } from "@/lib/option-colors";
 
 export interface MarketOption {
   id: string;
@@ -48,7 +49,13 @@ export interface Market {
 interface MarketCardProps {
   market: Market;
   onClick?: () => void;
+  /** 그리드 셀 안에서 높이·폭 맞춤 등 */
+  className?: string;
 }
+
+/** 메인·프로필 등 보트 카드 나열 — 카드 최소 폭 300px 유지 후 남는 폭 균등·줄바꿈 */
+export const MARKET_FEED_GRID_CLASS =
+  "grid w-full grid-flow-row items-stretch gap-5 [grid-template-columns:repeat(auto-fill,minmax(min(100%,300px),1fr))]";
 
 const categoryLabels: Record<Exclude<CategoryId, "all">, string> = {
   crypto: "크립토",
@@ -102,6 +109,30 @@ function timeUntil(date: Date, now: Date): string {
   return `${m}분 후 확정 예정`;
 }
 
+/** 카드 헤더 한 줄용 — 긴 설명은 `title`로 노출 */
+function getTimeRemainingCompact(date: Date): string {
+  const now = new Date();
+  const diff = date.getTime() - now.getTime();
+  if (diff <= 0) return "종료";
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+  const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+  if (days > 0) return `${days}일 ${hours}시간`;
+  if (hours > 0) return `${hours}시간`;
+  return `${minutes}분`;
+}
+
+function timeUntilCompact(date: Date, now: Date): string {
+  const diff = date.getTime() - now.getTime();
+  if (diff <= 0) return "곧";
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+  const m = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+  if (days > 0) return `${days}일 ${hours}시간`;
+  if (hours > 0) return `${hours}시간 ${m}분`;
+  return `${m}분`;
+}
+
 const PHASE_LABEL: Record<MarketLifecyclePhase, string> = {
   active: "진행 중",
   waiting: "결과 대기 중",
@@ -141,7 +172,7 @@ function phaseStyles(phase: MarketLifecyclePhase): {
   }
 }
 
-export function MarketCard({ market, onClick }: MarketCardProps) {
+export function MarketCard({ market, onClick, className }: MarketCardProps) {
   const userId = loadAuthUser()?.name?.trim() || "anon";
   const target = useMemo(() => ({ type: "market" as const, id: market.id }), [market.id]);
   const [likeCount, setLikeCount] = useState<number>(0);
@@ -195,7 +226,7 @@ export function MarketCard({ market, onClick }: MarketCardProps) {
   const styles = phaseStyles(phase);
   const accent = market.accentColor?.trim() || undefined;
 
-  const clockLabel =
+  const clockLabelFull =
     phase === "active"
       ? getTimeRemaining(market.endsAt)
       : phase === "waiting" && market.resultAt
@@ -204,15 +235,25 @@ export function MarketCard({ market, onClick }: MarketCardProps) {
           ? "결과 일정 대기"
           : "종료";
 
+  const clockLabelShort =
+    phase === "active"
+      ? getTimeRemainingCompact(market.endsAt)
+      : phase === "waiting" && market.resultAt
+        ? timeUntilCompact(market.resultAt, now)
+        : phase === "waiting"
+          ? "일정 대기"
+          : "종료";
+
   return (
     <button
       type="button"
       onClick={onClick}
       className={cn(
-        "group w-full text-left p-4 md:p-5 rounded-xl border transition-all duration-300",
+        "group flex min-h-[260px] w-full min-w-0 flex-col text-left p-4 md:p-5 rounded-xl border transition-all duration-300",
         "hover:shadow-lg",
         styles.card,
         phase === "active" && "hover:bg-surface-elevated/80",
+        className,
       )}
       style={
         accent
@@ -241,8 +282,8 @@ export function MarketCard({ market, onClick }: MarketCardProps) {
           aria-hidden="true"
         />
       )}
-      <div className="flex flex-col gap-2.5 mb-3 sm:flex-row sm:items-start sm:justify-between">
-        <div className="flex flex-wrap items-center gap-2 min-w-0">
+      <div className="flex min-w-0 flex-col gap-2.5 mb-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
           <Badge
             variant="outline"
             className={cn(
@@ -257,7 +298,7 @@ export function MarketCard({ market, onClick }: MarketCardProps) {
             <Badge
               variant="outline"
               className={cn(
-                "text-[10px] font-bold px-2 py-0.5 border-border/60 bg-secondary/40 text-foreground/90",
+                "text-[10px] font-bold px-2 py-0.5 shrink-0 border-border/60 bg-secondary/40 text-foreground/90",
                 phase === "completed" && "opacity-90",
               )}
               title={`세부 카테고리: ${market.subCategoryLabel}`}
@@ -268,7 +309,7 @@ export function MarketCard({ market, onClick }: MarketCardProps) {
           {market.isOfficial && (
             <span
               className={cn(
-                "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-bold",
+                "inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-bold",
                 "bg-chart-5/10 text-chart-5 border-chart-5/25",
                 phase === "completed" && "opacity-90",
               )}
@@ -280,7 +321,7 @@ export function MarketCard({ market, onClick }: MarketCardProps) {
           )}
           <Badge
             className={cn(
-              "text-[10px] font-bold uppercase tracking-wide px-2 py-0.5",
+              "text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 shrink-0",
               styles.badge,
             )}
           >
@@ -292,9 +333,10 @@ export function MarketCard({ market, onClick }: MarketCardProps) {
             "flex items-center gap-1.5 text-xs tabular-nums shrink-0",
             styles.clock,
           )}
+          title={clockLabelFull}
         >
-          <Clock className="size-3.5 opacity-80" />
-          <span>{clockLabel}</span>
+          <Clock className="size-3.5 opacity-80" aria-hidden />
+          <span>{clockLabelShort}</span>
         </div>
       </div>
 
@@ -309,26 +351,28 @@ export function MarketCard({ market, onClick }: MarketCardProps) {
         {market.question}
       </h3>
 
-      <div className="space-y-2.5 mb-4">
+      <div className="mb-4 min-h-0 flex-1 space-y-2.5">
         {market.options.map((option) => {
           const pct = market.totalPool > 0 ? option.percentage : 0;
+          const barColor = normalizeHex6(option.color) ?? option.color;
           return (
-            <div key={option.id} className="space-y-1">
-              <div className="flex items-center justify-between text-sm">
-                <span className="font-medium text-foreground">{option.label}</span>
+            <div key={option.id} className="min-w-0 space-y-1">
+              <div className="flex min-w-0 items-center justify-between gap-2 text-sm">
+                <span className="min-w-0 truncate font-medium text-foreground">{option.label}</span>
                 <span
-                  className="font-semibold"
-                  style={{ color: option.color }}
+                  className="font-semibold tabular-nums shrink-0"
+                  style={{ color: barColor }}
                 >
                   {pct}%
                 </span>
               </div>
-              <div className="relative h-2 rounded-full overflow-hidden bg-secondary">
+              <div className="relative h-2 rounded-full overflow-hidden bg-secondary ring-1 ring-inset ring-border/40">
                 <div
                   className="absolute inset-y-0 left-0 rounded-full transition-all duration-500"
                   style={{
                     width: `${pct}%`,
-                    backgroundColor: option.color,
+                    backgroundColor: barColor,
+                    boxShadow: `inset 0 0 0 1px color-mix(in srgb, ${barColor} 35%, transparent)`,
                   }}
                 />
               </div>
@@ -339,7 +383,7 @@ export function MarketCard({ market, onClick }: MarketCardProps) {
 
       <div
         className={cn(
-          "flex items-center justify-between text-xs text-muted-foreground pt-3 border-t",
+          "mt-auto flex items-center justify-between text-xs text-muted-foreground pt-3 border-t",
           phase === "waiting" ? "border-orange-500/25" : "border-border/50",
           phase === "completed" && "border-border/40",
         )}

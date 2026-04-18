@@ -1,11 +1,18 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
-import { Settings2 } from "lucide-react";
+import type { ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useInView } from "react-intersection-observer";
+import { Loader2, Settings2 } from "lucide-react";
 import { Navbar } from "@/components/navbar";
 import { CategoryFilter, FilterId, isSortFilter } from "@/components/category-filter";
-import { MarketCard, Market } from "@/components/market-card";
+import { isValidBoardTab } from "@/lib/board-navigation";
+import { GAME_SUBCATEGORIES } from "@/components/game-subcategory-bar";
+import { SPORTS_SUBCATEGORIES } from "@/components/sports-subcategory-bar";
+import { STOCKS_SUBCATEGORIES } from "@/components/stocks-subcategory-bar";
+import { POLITICS_SUBCATEGORIES } from "@/components/politics-subcategory-bar";
+import { MarketCard, Market, MARKET_FEED_GRID_CLASS } from "@/components/market-card";
 import { CommunityBoard } from "@/components/community-board";
 import { UserLeaderboard } from "@/components/leaderboard";
 import {
@@ -28,7 +35,6 @@ import { TrendingBetsSidebar } from "@/components/trending-bets-sidebar";
 import { TrendingPostsSidebar } from "@/components/trending-posts-sidebar";
 import { useUserPointsBalance } from "@/lib/points";
 import { checkAndGrantAttendance } from "@/lib/daily-rewards";
-import { loadUserMarkets } from "@/lib/markets";
 import { marketTrendingScore } from "@/lib/trending";
 import {
   loadHomeViewMode,
@@ -44,6 +50,107 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
+import { parseFeedWireToMarket, type BetFeedMarketWire } from "@/lib/bets-feed-wire";
+import { buildBetsFeedSearchParams } from "@/lib/bets-feed-home-query";
+import { AdSlot } from "@/components/ads/ad-slot";
+
+/** 인피드 광고 — N번째 카드 뒤에 삽입 */
+const AD_FEED_INTERVAL = 5; // 5개 마다 광고 1개
+const AD_FEED_SLOT = process.env.NEXT_PUBLIC_AD_SLOT_FEED ?? "0000000000";
+
+const BOARD_SUB_TABS = new Set<FilterId>(["game", "sports", "stocks", "politics"]);
+
+function dedupeAppendMarkets(prev: Market[], more: Market[]): Market[] {
+  const seen = new Set(prev.map((m) => m.id));
+  const add: Market[] = [];
+  for (const m of more) {
+    if (seen.has(m.id)) continue;
+    seen.add(m.id);
+    add.push(m);
+  }
+  return [...prev, ...add];
+}
+
+function BetFeedListSection({
+  markets,
+  hasMore,
+  isLoadingInitial,
+  isLoadingMore,
+  sentinelRef,
+  emptyState,
+  onMarketNavigate,
+}: {
+  markets: Market[];
+  hasMore: boolean;
+  isLoadingInitial: boolean;
+  isLoadingMore: boolean;
+  sentinelRef: (node: Element | null) => void;
+  emptyState: ReactNode;
+  onMarketNavigate: (id: string) => void;
+}) {
+  if (isLoadingInitial && markets.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-3 py-20">
+        <Loader2 className="size-10 animate-spin text-chart-5" aria-hidden />
+        <p className="text-sm text-muted-foreground">보트 목록을 불러오는 중...</p>
+      </div>
+    );
+  }
+  if (markets.length === 0) return <>{emptyState}</>;
+
+  // 카드 목록에 인피드 광고 슬롯을 N개 간격으로 삽입
+  const feedItems: React.ReactNode[] = [];
+  markets.forEach((market, idx) => {
+    feedItems.push(
+      <div key={market.id} className="flex min-h-0 min-w-0 h-full">
+        <MarketCard
+          market={market}
+          className="h-full"
+          onClick={() => onMarketNavigate(market.id)}
+        />
+      </div>
+    );
+    // AD_FEED_INTERVAL 번째마다 인피드 광고 삽입 (마지막 카드 뒤는 제외)
+    if ((idx + 1) % AD_FEED_INTERVAL === 0 && idx + 1 < markets.length) {
+      feedItems.push(
+        <div
+          key={`ad-feed-${idx}`}
+          className="col-span-full"
+        >
+          <AdSlot
+            slot={AD_FEED_SLOT}
+            format="fluid"
+            inFeed
+            className="my-1"
+            label="스폰서 광고"
+          />
+        </div>
+      );
+    }
+  });
+
+  return (
+    <>
+      <div className={MARKET_FEED_GRID_CLASS}>
+        {feedItems}
+      </div>
+      <div
+        ref={sentinelRef}
+        className="flex w-full min-h-16 flex-col items-center justify-center py-6"
+      >
+        {isLoadingMore && (
+          <>
+            <Loader2 className="mb-2 size-8 animate-spin text-chart-5" aria-hidden />
+            <p className="text-sm text-muted-foreground">보트를 더 불러오는 중...</p>
+          </>
+        )}
+        {!hasMore && !isLoadingMore && markets.length > 0 && (
+          <p className="text-xs text-muted-foreground/80">모든 보트를 불러왔습니다</p>
+        )}
+      </div>
+    </>
+  );
+}
 
 const VIEW_MODE_OPTIONS = [
   {
@@ -53,8 +160,8 @@ const VIEW_MODE_OPTIONS = [
   },
   {
     mode: "bets" as const,
-    short: "베팅",
-    title: "베팅만 집중해서 보기",
+    short: "보트",
+    title: "보트만 집중해서 보기",
   },
   {
     mode: "board" as const,
@@ -63,17 +170,8 @@ const VIEW_MODE_OPTIONS = [
   },
 ] as const;
 
-// Colors for multi-choice options
-const optionColors = [
-  "oklch(0.7 0.18 230)",  // neon blue
-  "oklch(0.7 0.18 150)",  // neon green
-  "oklch(0.65 0.22 25)",  // neon red
-  "oklch(0.75 0.15 80)",  // yellow/gold
-  "oklch(0.65 0.2 300)",  // purple
-];
-
-/** 목 보트에 resultAt이 없으면 마감 후 N일 뒤로 가정 (카드 생명주기 표시용) */
-function enrichMockResultAt(m: Market, daysAfterClose = 10): Market {
+/** DB 피드에 resultAt이 없으면 카드 생명주기 표시용 보조 값 */
+function enrichFeedResultAt(m: Market, daysAfterClose = 10): Market {
   if (m.resultAt != null) return m;
   return {
     ...m,
@@ -81,188 +179,74 @@ function enrichMockResultAt(m: Market, daysAfterClose = 10): Market {
   };
 }
 
-/** 모듈 로드 시점 기준: 결과 대기 / 정산 완료 데모 (3가지 상태 확인용) */
-const lifecycleDemoMarkets: Market[] = (() => {
-  const ms = 86400000;
-  const t = Date.now();
-  return [
-    {
-      id: "demo-waiting",
-      question: "[데모] 결과 대기 중 (베팅 마감 · 발표 전)",
-      category: "fun" as const,
-      options: [
-        { id: "dwa", label: "옵션 A", percentage: 50, color: optionColors[0] },
-        { id: "dwb", label: "옵션 B", percentage: 50, color: optionColors[1] },
-      ],
-      totalPool: 99000,
-      comments: 12,
-      endsAt: new Date(t - 2 * ms),
-      resultAt: new Date(t + 5 * ms),
-      createdAt: new Date(t - 10 * ms),
-    },
-    {
-      id: "demo-completed",
-      question: "[데모] 정산 완료 (결과 확정)",
-      category: "fun" as const,
-      options: [
-        { id: "dca", label: "적중", percentage: 100, color: optionColors[1] },
-        { id: "dcb", label: "기타", percentage: 0, color: optionColors[2] },
-      ],
-      totalPool: 120000,
-      comments: 45,
-      endsAt: new Date(t - 14 * ms),
-      resultAt: new Date(t - 7 * ms),
-      winningOptionId: "dca",
-      createdAt: new Date(t - 20 * ms),
-    },
-  ];
-})();
-
-const mockMarkets: Market[] = [
-  {
-    id: "1",
-    question: "다음 미국 대선의 최종 승자는 누구일까?",
-    category: "politics",
-    options: [
-      { id: "1a", label: "트럼프", percentage: 55, color: optionColors[0] },
-      { id: "1b", label: "바이든", percentage: 45, color: optionColors[1] },
-    ],
-    totalPool: 1250000,
-    comments: 432,
-    endsAt: new Date("2028-11-05"),
-    createdAt: new Date(Date.now() - 72 * 60 * 60 * 1000),   // 3일 전
-  },
-  {
-    id: "2",
-    question: "삼성전자 이번 달 8만 전자 돌파할까?",
-    category: "stocks",
-    options: [
-      { id: "2a", label: "돌파한다", percentage: 38, color: optionColors[1] },
-      { id: "2b", label: "못한다", percentage: 62, color: optionColors[2] },
-    ],
-    totalPool: 890000,
-    comments: 156,
-    endsAt: new Date("2026-04-30"),
-    createdAt: new Date(Date.now() - 18 * 60 * 60 * 1000),   // 18시간 전
-  },
-  {
-    id: "3",
-    question: "비트코인 2026년 내 15만 달러 돌파?",
-    category: "crypto",
-    options: [
-      { id: "3a", label: "돌파", percentage: 67, color: optionColors[1] },
-      { id: "3b", label: "미돌파", percentage: 33, color: optionColors[2] },
-    ],
-    totalPool: 2340000,
-    comments: 567,
-    endsAt: new Date("2026-12-31"),
-    createdAt: new Date(Date.now() - 120 * 60 * 60 * 1000),  // 5일 전
-  },
-  {
-    id: "4",
-    question: "2026 월드컵 우승국은?",
-    category: "sports",
-    options: [
-      { id: "4a", label: "브라질", percentage: 28, color: optionColors[1] },
-      { id: "4b", label: "아르헨티나", percentage: 25, color: optionColors[0] },
-      { id: "4c", label: "프랑스", percentage: 22, color: optionColors[2] },
-      { id: "4d", label: "기타", percentage: 25, color: optionColors[3] },
-    ],
-    totalPool: 3200000,
-    comments: 892,
-    endsAt: new Date("2026-07-19"),
-    createdAt: new Date(Date.now() - 48 * 60 * 60 * 1000),   // 2일 전
-  },
-  {
-    id: "5",
-    question: "이더리움 가격이 비트코인을 추월할까?",
-    category: "crypto",
-    options: [
-      { id: "5a", label: "추월한다", percentage: 15, color: optionColors[1] },
-      { id: "5b", label: "추월 못함", percentage: 85, color: optionColors[2] },
-    ],
-    totalPool: 567000,
-    comments: 234,
-    endsAt: new Date("2027-12-31"),
-    createdAt: new Date(Date.now() - 6 * 60 * 60 * 1000),    // 6시간 전
-  },
-  {
-    id: "6",
-    question: "테슬라 주가 2026년 500달러 돌파?",
-    category: "stocks",
-    options: [
-      { id: "6a", label: "돌파", percentage: 42, color: optionColors[1] },
-      { id: "6b", label: "미돌파", percentage: 58, color: optionColors[2] },
-    ],
-    totalPool: 1120000,
-    comments: 321,
-    endsAt: new Date("2026-12-31"),
-    createdAt: new Date(Date.now() - 36 * 60 * 60 * 1000),   // 1.5일 전
-  },
-  {
-    id: "7",
-    question: "다음 한국 대통령 선거 당선자는?",
-    category: "politics",
-    options: [
-      { id: "7a", label: "여당 후보", percentage: 48, color: optionColors[0] },
-      { id: "7b", label: "야당 후보", percentage: 47, color: optionColors[1] },
-      { id: "7c", label: "제3후보", percentage: 5, color: optionColors[3] },
-    ],
-    totalPool: 4500000,
-    comments: 1234,
-    endsAt: new Date("2027-03-09"),
-    createdAt: new Date(Date.now() - 96 * 60 * 60 * 1000),   // 4일 전
-  },
-  {
-    id: "8",
-    question: "OpenAI가 2026년 내 IPO 할까?",
-    category: "fun",
-    options: [
-      { id: "8a", label: "IPO 진행", percentage: 35, color: optionColors[1] },
-      { id: "8b", label: "진행 안함", percentage: 65, color: optionColors[2] },
-    ],
-    totalPool: 780000,
-    comments: 189,
-    endsAt: new Date("2026-12-31"),
-    createdAt: new Date(Date.now() - 10 * 60 * 60 * 1000),   // 10시간 전
-  },
-  {
-    id: "9",
-    question: "올해 밈(Meme) 코인 대장, 도지는 다시 날아오를까?",
-    category: "fun",
-    options: [
-      { id: "9a", label: "날아오른다", percentage: 52, color: optionColors[0] },
-      { id: "9b", label: "그냥 밈이다", percentage: 48, color: optionColors[2] },
-    ],
-    totalPool: 420000,
-    comments: 77,
-    endsAt: new Date("2026-06-30"),
-    createdAt: new Date(Date.now() - 3 * 60 * 60 * 1000),    // 3시간 전
-  },
-  {
-    id: "10",
-    question: "올해 GOTY(Game of the Year)는 어떤 게임이 될까?",
-    category: "game",
-    options: [
-      { id: "10a", label: "AAA 대작", percentage: 44, color: optionColors[1] },
-      { id: "10b", label: "인디 돌풍", percentage: 56, color: optionColors[0] },
-    ],
-    totalPool: 510000,
-    comments: 64,
-    endsAt: new Date("2026-12-31"),
-    createdAt: new Date(Date.now() - 14 * 60 * 60 * 1000),   // 14시간 전
-  },
-].map((m) => enrichMockResultAt(m));
-
 export function HomeClient() {
   const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
+
+  /** 보트 상세로 갔다가 '보트 목록으로' 시 탭·서브·page 등 복원 */
+  const feedListReturnUrl = useMemo(
+    () => `${pathname}${searchParams.toString() ? `?${searchParams.toString()}` : ""}`,
+    [pathname, searchParams],
+  );
+
+  const navigateToMarket = useCallback(
+    (id: string) => {
+      const p = new URLSearchParams();
+      p.set("next", feedListReturnUrl);
+      router.push(`/market/${id}?${p.toString()}`);
+    },
+    [router, feedListReturnUrl],
+  );
   const [selectedFilter, setSelectedFilter] = useState<FilterId>("popular");
   const [gameSubCategory, setGameSubCategory] = useState<GameSubCategoryId>("all");
   const [sportsSubCategory, setSportsSubCategory] = useState<SportsSubCategoryId>("all");
   const [stocksSubCategory, setStocksSubCategory] = useState<StocksSubCategoryId>("all");
   const [politicsSubCategory, setPoliticsSubCategory] = useState<PoliticsSubCategoryId>("all");
   const [searchQuery, setSearchQuery] = useState("");
+
+  /**
+   * 탭 상태는 useEffect 보다 늦게 반영되는데, API 페치는 첫 렌더에서 바로 돈다.
+   * 보트 상세에서 `/?tab=crypto` 로 돌아오면 한동안 selectedFilter 가 popular 라
+   * 인기 피드를 받은 뒤 crypto 로만 필터해 목록이 비어 보였다.
+   * URL의 tab/sub 를 페치·클라이언트 필터에 즉시 반영한다.
+   */
+  const feedTab = useMemo((): FilterId => {
+    const t = searchParams.get("tab");
+    if (isValidBoardTab(t)) return t;
+    return selectedFilter;
+  }, [searchParams, selectedFilter]);
+
+  const subParam = searchParams.get("sub");
+
+  const effectiveGameSub = useMemo((): GameSubCategoryId => {
+    if (feedTab !== "game") return gameSubCategory;
+    if (subParam && GAME_SUBCATEGORIES.some((x) => x.id === subParam))
+      return subParam as GameSubCategoryId;
+    return gameSubCategory;
+  }, [feedTab, subParam, gameSubCategory]);
+
+  const effectiveSportsSub = useMemo((): SportsSubCategoryId => {
+    if (feedTab !== "sports") return sportsSubCategory;
+    if (subParam && SPORTS_SUBCATEGORIES.some((x) => x.id === subParam))
+      return subParam as SportsSubCategoryId;
+    return sportsSubCategory;
+  }, [feedTab, subParam, sportsSubCategory]);
+
+  const effectiveStocksSub = useMemo((): StocksSubCategoryId => {
+    if (feedTab !== "stocks") return stocksSubCategory;
+    if (subParam && STOCKS_SUBCATEGORIES.some((x) => x.id === subParam))
+      return subParam as StocksSubCategoryId;
+    return stocksSubCategory;
+  }, [feedTab, subParam, stocksSubCategory]);
+
+  const effectivePoliticsSub = useMemo((): PoliticsSubCategoryId => {
+    if (feedTab !== "politics") return politicsSubCategory;
+    if (subParam && POLITICS_SUBCATEGORIES.some((x) => x.id === subParam))
+      return subParam as PoliticsSubCategoryId;
+    return politicsSubCategory;
+  }, [feedTab, subParam, politicsSubCategory]);
+
   const { userId, points: userBalance } = useUserPointsBalance();
   const [viewMode, setViewMode] = useState<HomeViewMode>("split");
   const [displaySettingsOpen, setDisplaySettingsOpen] = useState(false);
@@ -277,74 +261,264 @@ export function HomeClient() {
     saveHomeViewMode(m);
   }, []);
 
-  // 사용자 생성 보트 (localStorage)
-  const [userMarkets, setUserMarkets] = useState<Market[]>([]);
-  useEffect(() => {
-    const load = () => {
-      const raw = loadUserMarkets();
-      setUserMarkets(
-        raw.map((m) => ({
-          id: m.id,
-          question: m.question,
-          category: m.category as Market["category"],
-          subCategory: m.subCategory,
-          options: m.options,
-          totalPool: m.totalPool,
-          participants: m.participants ?? 0,
-          comments: 0,
-          endsAt: new Date(m.endsAt),
-          createdAt: m.createdAt ? new Date(m.createdAt) : new Date(),
-          resultAt: m.resultAt ? new Date(m.resultAt) : undefined,
-          winningOptionId: m.winningOptionId,
-        }))
-      );
-    };
-    load();
-    window.addEventListener("voters:marketsUpdated", load);
-    return () => window.removeEventListener("voters:marketsUpdated", load);
-  }, []);
+  const [feedMarkets, setFeedMarkets] = useState<Market[]>([]);
+  const [feedHasMore, setFeedHasMore] = useState(true);
+  const [isLoadingFeed, setIsLoadingFeed] = useState(true);
+  const [isLoadingMoreFeed, setIsLoadingMoreFeed] = useState(false);
+  const nextOffsetRef = useRef(0);
+  const fetchLockRef = useRef(false);
+
+  const fetchFeedPage = useCallback(
+    async (reset: boolean) => {
+      if (fetchLockRef.current) return;
+      if (!reset && nextOffsetRef.current === 0) return;
+
+      fetchLockRef.current = true;
+      const offset = reset ? 0 : nextOffsetRef.current;
+
+      if (reset) {
+        setIsLoadingFeed(true);
+        setFeedMarkets([]);
+        nextOffsetRef.current = 0;
+        setFeedHasMore(true);
+      } else {
+        setIsLoadingMoreFeed(true);
+      }
+
+      try {
+        const params = buildBetsFeedSearchParams({
+          offset,
+          selectedFilter: feedTab,
+          gameSubCategory: effectiveGameSub,
+          sportsSubCategory: effectiveSportsSub,
+          stocksSubCategory: effectiveStocksSub,
+          politicsSubCategory: effectivePoliticsSub,
+        });
+        const res = await fetch(`/api/bets-feed?${params.toString()}`, {
+          credentials: "same-origin",
+          cache: "no-store",
+        });
+        const j = (await res.json().catch(() => ({}))) as {
+          ok?: boolean;
+          markets?: BetFeedMarketWire[];
+          hasMore?: boolean;
+          offset?: number;
+        };
+        if (!res.ok || !j?.ok || !Array.isArray(j.markets)) {
+          if (reset) setFeedMarkets([]);
+          setFeedHasMore(false);
+          return;
+        }
+        const mapped = j.markets.map(parseFeedWireToMarket);
+        if (reset) {
+          setFeedMarkets(mapped);
+        } else {
+          setFeedMarkets((prev) => dedupeAppendMarkets(prev, mapped));
+        }
+        const baseOff = typeof j.offset === "number" ? j.offset : offset;
+        nextOffsetRef.current = baseOff + mapped.length;
+        setFeedHasMore(Boolean(j.hasMore));
+      } catch {
+        if (reset) setFeedMarkets([]);
+        setFeedHasMore(false);
+      } finally {
+        fetchLockRef.current = false;
+        setIsLoadingFeed(false);
+        setIsLoadingMoreFeed(false);
+      }
+    },
+    [
+      feedTab,
+      effectiveGameSub,
+      effectiveSportsSub,
+      effectiveStocksSub,
+      effectivePoliticsSub,
+    ],
+  );
 
   useEffect(() => {
-    const tab = searchParams.get("tab");
-    if (tab === "popular") setSelectedFilter("popular");
+    void fetchFeedPage(true);
+  }, [fetchFeedPage]);
+
+  useEffect(() => {
+    const onStale = () => void fetchFeedPage(true);
+    window.addEventListener("voters:feedBetsMaybeStale", onStale);
+    return () => window.removeEventListener("voters:feedBetsMaybeStale", onStale);
+  }, [fetchFeedPage]);
+
+  const { ref: loadMoreSentinelRef, inView: loadMoreInView } = useInView({
+    rootMargin: "280px 0px",
+    threshold: 0,
+  });
+
+  useEffect(() => {
+    if (
+      !loadMoreInView ||
+      !feedHasMore ||
+      isLoadingFeed ||
+      isLoadingMoreFeed ||
+      fetchLockRef.current
+    ) {
+      return;
+    }
+    void fetchFeedPage(false);
+  }, [
+    loadMoreInView,
+    feedHasMore,
+    isLoadingFeed,
+    isLoadingMoreFeed,
+    fetchFeedPage,
+  ]);
+
+  useEffect(() => {
+    const tabRaw = searchParams.get("tab");
+    if (isValidBoardTab(tabRaw)) setSelectedFilter(tabRaw);
+
+    const sub = searchParams.get("sub");
+    if (!sub || !isValidBoardTab(tabRaw)) return;
+
+    if (tabRaw === "game" && GAME_SUBCATEGORIES.some((x) => x.id === sub))
+      setGameSubCategory(sub as GameSubCategoryId);
+    if (tabRaw === "sports" && SPORTS_SUBCATEGORIES.some((x) => x.id === sub))
+      setSportsSubCategory(sub as SportsSubCategoryId);
+    if (tabRaw === "stocks" && STOCKS_SUBCATEGORIES.some((x) => x.id === sub))
+      setStocksSubCategory(sub as StocksSubCategoryId);
+    if (tabRaw === "politics" && POLITICS_SUBCATEGORIES.some((x) => x.id === sub))
+      setPoliticsSubCategory(sub as PoliticsSubCategoryId);
   }, [searchParams]);
 
+  const handleFilterSelect = useCallback(
+    (f: FilterId) => {
+      setSelectedFilter(f);
+      const p = new URLSearchParams(searchParams.toString());
+      p.set("tab", f);
+      if (isSortFilter(f)) {
+        p.delete("sub");
+        router.replace(p.toString() ? `/?${p.toString()}` : "/", { scroll: false });
+        return;
+      }
+      const prevRaw = searchParams.get("tab");
+      const prev = isValidBoardTab(prevRaw) ? prevRaw : null;
+      const fHasSub = BOARD_SUB_TABS.has(f);
+      const prevHasSub = prev != null && BOARD_SUB_TABS.has(prev);
+      if (!fHasSub || !prevHasSub || f !== prev) {
+        p.delete("sub");
+      }
+      router.replace(p.toString() ? `/?${p.toString()}` : "/", { scroll: false });
+    },
+    [router, searchParams],
+  );
+
+  const onGameSubSelect = useCallback(
+    (id: GameSubCategoryId) => {
+      setGameSubCategory(id);
+      const p = new URLSearchParams(searchParams.toString());
+      p.set("tab", "game");
+      if (id === "all") p.delete("sub");
+      else p.set("sub", id);
+      router.replace(p.toString() ? `/?${p.toString()}` : "/", { scroll: false });
+    },
+    [router, searchParams],
+  );
+
+  const onSportsSubSelect = useCallback(
+    (id: SportsSubCategoryId) => {
+      setSportsSubCategory(id);
+      const p = new URLSearchParams(searchParams.toString());
+      p.set("tab", "sports");
+      if (id === "all") p.delete("sub");
+      else p.set("sub", id);
+      router.replace(p.toString() ? `/?${p.toString()}` : "/", { scroll: false });
+    },
+    [router, searchParams],
+  );
+
+  const onStocksSubSelect = useCallback(
+    (id: StocksSubCategoryId) => {
+      setStocksSubCategory(id);
+      const p = new URLSearchParams(searchParams.toString());
+      p.set("tab", "stocks");
+      if (id === "all") p.delete("sub");
+      else p.set("sub", id);
+      router.replace(p.toString() ? `/?${p.toString()}` : "/", { scroll: false });
+    },
+    [router, searchParams],
+  );
+
+  const onPoliticsSubSelect = useCallback(
+    (id: PoliticsSubCategoryId) => {
+      setPoliticsSubCategory(id);
+      const p = new URLSearchParams(searchParams.toString());
+      p.set("tab", "politics");
+      if (id === "all") p.delete("sub");
+      else p.set("sub", id);
+      router.replace(p.toString() ? `/?${p.toString()}` : "/", { scroll: false });
+    },
+    [router, searchParams],
+  );
+
   useEffect(() => {
-    if (selectedFilter !== "game") setGameSubCategory("all");
-    if (selectedFilter !== "sports") setSportsSubCategory("all");
-    if (selectedFilter !== "stocks") setStocksSubCategory("all");
-    if (selectedFilter !== "politics") setPoliticsSubCategory("all");
-  }, [selectedFilter]);
+    if (feedTab !== "game") setGameSubCategory("all");
+    if (feedTab !== "sports") setSportsSubCategory("all");
+    if (feedTab !== "stocks") setStocksSubCategory("all");
+    if (feedTab !== "politics") setPoliticsSubCategory("all");
+  }, [feedTab]);
 
   // 로그인된 유저에게 출석 보상 지급 (하루 1회)
   useEffect(() => {
     if (userId && userId !== "anon") {
-      checkAndGrantAttendance(userId);
+      void checkAndGrantAttendance(userId);
     }
   }, [userId]);
 
-  const sortMode = isSortFilter(selectedFilter) ? selectedFilter : "popular";
-  const categoryFilter = isSortFilter(selectedFilter) ? "all" : selectedFilter;
+  const sortMode = isSortFilter(feedTab) ? feedTab : "popular";
+  const categoryFilter = isSortFilter(feedTab) ? "all" : feedTab;
+
+  const boardActiveSubTabId = useMemo(() => {
+    switch (feedTab) {
+      case "game":
+        return effectiveGameSub;
+      case "sports":
+        return effectiveSportsSub;
+      case "stocks":
+        return effectiveStocksSub;
+      case "politics":
+        return effectivePoliticsSub;
+      default:
+        return undefined;
+    }
+  }, [
+    feedTab,
+    effectiveGameSub,
+    effectiveSportsSub,
+    effectiveStocksSub,
+    effectivePoliticsSub,
+  ]);
+
+  const mergedMarkets = useMemo(
+    () => feedMarkets.map((m) => enrichFeedResultAt(m)),
+    [feedMarkets],
+  );
 
   const filteredMarkets = useMemo(() => {
-    const allMarkets = [...userMarkets, ...lifecycleDemoMarkets, ...mockMarkets];
+    const allMarkets = mergedMarkets;
 
     const matchesFilter = (market: Market) => {
       const matchesCategory =
         categoryFilter === "all" || market.category === categoryFilter;
       const matchesSub =
         categoryFilter === "game"
-          ? gameSubCategory === "all" ||
-            (market.subCategory ?? "other") === gameSubCategory
+          ? effectiveGameSub === "all" ||
+            (market.subCategory ?? "other") === effectiveGameSub
           : categoryFilter === "sports"
-            ? sportsSubCategory === "all" ||
-              (market.subCategory ?? "other") === sportsSubCategory
+            ? effectiveSportsSub === "all" ||
+              (market.subCategory ?? "other") === effectiveSportsSub
             : categoryFilter === "stocks"
-              ? stocksSubCategory === "all" ||
-                (market.subCategory ?? "other") === stocksSubCategory
+              ? effectiveStocksSub === "all" ||
+                (market.subCategory ?? "other") === effectiveStocksSub
               : categoryFilter === "politics"
-                ? politicsSubCategory === "all" ||
-                  (market.subCategory ?? "other") === politicsSubCategory
+                ? effectivePoliticsSub === "all" ||
+                  (market.subCategory ?? "other") === effectivePoliticsSub
             : true;
       const matchesSearch = market.question
         .toLowerCase()
@@ -353,29 +527,47 @@ export function HomeClient() {
     };
 
     if (sortMode === "popular") {
-      // 트렌딩 점수 기준 정렬, 최대 10개
       return [...allMarkets]
-        .sort(
-          (a, b) =>
-            marketTrendingScore(b) - marketTrendingScore(a),
-        )
         .filter(matchesFilter)
-        .slice(0, 10);
+        .sort((a, b) => marketTrendingScore(b) - marketTrendingScore(a));
     }
 
-    // 최신 탭: 마감일 가까운 순 (오름차순)
-    return [...allMarkets]
-      .sort((a, b) => a.endsAt.getTime() - b.endsAt.getTime())
-      .filter(matchesFilter);
-  }, [sortMode, categoryFilter, gameSubCategory, sportsSubCategory, stocksSubCategory, politicsSubCategory, searchQuery, userMarkets]);
+    // 최신 탭: 서버가 `created_desc`로 이미 정렬 — 클라이언트 재정렬 없이 필터만
+    return allMarkets.filter(matchesFilter);
+  }, [
+    sortMode,
+    categoryFilter,
+    effectiveGameSub,
+    effectiveSportsSub,
+    effectiveStocksSub,
+    effectivePoliticsSub,
+    searchQuery,
+    mergedMarkets,
+  ]);
 
   /** 게시판 전용 모드 사이드바: 트렌딩 상위 보트 */
   const trendingSidebarMarkets = useMemo(() => {
-    const all = [...userMarkets, ...lifecycleDemoMarkets, ...mockMarkets];
+    const all = mergedMarkets;
     return [...all]
       .sort((a, b) => marketTrendingScore(b) - marketTrendingScore(a))
       .slice(0, 5);
-  }, [userMarkets]);
+  }, [mergedMarkets]);
+
+  const betFeedEmpty = (
+    <div className="flex flex-col items-center justify-center py-16 text-center">
+      <div className="mb-4 flex size-16 items-center justify-center rounded-full bg-secondary">
+        <span className="text-3xl text-muted-foreground">?</span>
+      </div>
+      <h3 className="mb-2 text-lg font-semibold text-foreground">
+        표시할 보트가 없습니다
+      </h3>
+      <p className="max-w-sm text-sm text-muted-foreground">
+        {searchQuery
+          ? `"${searchQuery}"에 해당하는 보트가 없습니다. 다른 검색어를 시도해보세요.`
+          : "이 카테고리에는 아직 보트가 없습니다."}
+      </p>
+    </div>
+  );
 
   return (
     <div className="min-h-screen bg-background">
@@ -394,57 +586,57 @@ export function HomeClient() {
           <div className="flex flex-wrap items-center gap-3 min-w-0">
             <div className="flex-1 min-w-0 basis-full sm:basis-auto">
               <CategoryFilter
-                selected={selectedFilter}
-                onSelect={setSelectedFilter}
+                selected={feedTab}
+                onSelect={handleFilterSelect}
               />
               <div
                 className={cn(
                   "grid transition-[grid-template-rows] duration-300 ease-out",
-                  selectedFilter === "game" ||
-                    selectedFilter === "sports" ||
-                    selectedFilter === "stocks" ||
-                    selectedFilter === "politics"
+                  feedTab === "game" ||
+                    feedTab === "sports" ||
+                    feedTab === "stocks" ||
+                    feedTab === "politics"
                     ? "grid-rows-[1fr]"
                     : "grid-rows-[0fr]",
                 )}
                 aria-hidden={
-                  selectedFilter !== "game" &&
-                  selectedFilter !== "sports" &&
-                  selectedFilter !== "stocks" &&
-                  selectedFilter !== "politics"
+                  feedTab !== "game" &&
+                  feedTab !== "sports" &&
+                  feedTab !== "stocks" &&
+                  feedTab !== "politics"
                 }
               >
                 <div className="min-h-0 overflow-hidden">
                   <div
                     className={cn(
                       "pt-2 transition-all duration-300 ease-out",
-                      selectedFilter === "game" ||
-                        selectedFilter === "sports" ||
-                        selectedFilter === "stocks" ||
-                        selectedFilter === "politics"
+                      feedTab === "game" ||
+                        feedTab === "sports" ||
+                        feedTab === "stocks" ||
+                        feedTab === "politics"
                         ? "translate-y-0 opacity-100"
                         : "-translate-y-1 opacity-0 pointer-events-none",
                     )}
                   >
-                    {selectedFilter === "game" ? (
+                    {feedTab === "game" ? (
                       <GameSubCategoryBar
                         selected={gameSubCategory}
-                        onSelect={setGameSubCategory}
+                        onSelect={onGameSubSelect}
                       />
-                    ) : selectedFilter === "sports" ? (
+                    ) : feedTab === "sports" ? (
                       <SportsSubCategoryBar
                         selected={sportsSubCategory}
-                        onSelect={setSportsSubCategory}
+                        onSelect={onSportsSubSelect}
                       />
-                    ) : selectedFilter === "stocks" ? (
+                    ) : feedTab === "stocks" ? (
                       <StocksSubCategoryBar
                         selected={stocksSubCategory}
-                        onSelect={setStocksSubCategory}
+                        onSelect={onStocksSubSelect}
                       />
-                    ) : selectedFilter === "politics" ? (
+                    ) : feedTab === "politics" ? (
                       <PoliticsSubCategoryBar
                         selected={politicsSubCategory}
-                        onSelect={setPoliticsSubCategory}
+                        onSelect={onPoliticsSubSelect}
                       />
                     ) : null}
                   </div>
@@ -480,36 +672,21 @@ export function HomeClient() {
           {viewMode === "split" && (
             <>
               <section className="min-w-0 xl:col-start-2">
-                {filteredMarkets.length > 0 ? (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:gap-5">
-                    {filteredMarkets.map((market) => (
-                      <MarketCard
-                        key={market.id}
-                        market={market}
-                        onClick={() => router.push(`/market/${market.id}`)}
-                      />
-                    ))}
-                  </div>
-                ) : (
-                  <div className="flex flex-col items-center justify-center py-16 text-center">
-                    <div className="size-16 rounded-full bg-secondary flex items-center justify-center mb-4">
-                      <span className="text-3xl text-muted-foreground">?</span>
-                    </div>
-                    <h3 className="text-lg font-semibold text-foreground mb-2">
-                      보트를 찾을 수 없습니다
-                    </h3>
-                    <p className="text-sm text-muted-foreground max-w-sm">
-                      {searchQuery
-                        ? `"${searchQuery}"에 해당하는 보트가 없습니다. 다른 검색어를 시도해보세요.`
-                        : "이 카테고리에는 아직 보트가 없습니다."}
-                    </p>
-                  </div>
-                )}
+                <BetFeedListSection
+                  markets={filteredMarkets}
+                  hasMore={feedHasMore}
+                  isLoadingInitial={isLoadingFeed}
+                  isLoadingMore={isLoadingMoreFeed}
+                  sentinelRef={loadMoreSentinelRef}
+                  emptyState={betFeedEmpty}
+                  onMarketNavigate={navigateToMarket}
+                />
               </section>
 
               <aside className="lg:sticky lg:top-[88px] h-[560px] lg:h-[calc(100vh-120px)] xl:col-start-3">
                 <CommunityBoard
-                  activeFilter={selectedFilter}
+                  activeFilter={feedTab}
+                  activeSubTabId={boardActiveSubTabId}
                   searchQuery={searchQuery}
                   className="h-full"
                 />
@@ -517,83 +694,70 @@ export function HomeClient() {
             </>
           )}
 
-          {/* board 모드: 2:1 그리드 + 인기 베팅 사이드바 */}
+          {/* board 모드: 베팅 집중 모드와 같은 비율(넓은 메인 + 고정폭 사이드)으로 게시판 영역 확대 */}
           {viewMode === "board" && (
             <div
               className={cn(
                 "min-w-0 xl:col-start-2 xl:col-end-4",
-                "grid grid-cols-1 gap-8 lg:grid-cols-3 lg:items-start lg:gap-8",
+                "grid grid-cols-1 gap-6 lg:gap-6 lg:items-start",
+                "lg:grid-cols-[minmax(0,1fr)_minmax(200px,260px)]",
               )}
             >
               <div
                 className={cn(
-                  "min-w-0 lg:col-span-2",
-                  "w-full max-w-4xl mx-auto lg:mx-0",
+                  "min-w-0 w-full",
+                  "max-lg:max-w-xl max-lg:mx-auto",
                   "min-h-[560px] lg:min-h-[calc(100vh-120px)]",
                 )}
               >
                 <CommunityBoard
-                  activeFilter={selectedFilter}
+                  activeFilter={feedTab}
+                  activeSubTabId={boardActiveSubTabId}
                   searchQuery={searchQuery}
                   className="h-full min-h-0"
                 />
               </div>
               <aside
                 className={cn(
-                  "lg:col-span-1 w-full shrink-0",
+                  "w-full min-w-0 shrink-0",
                   "max-lg:max-w-xl max-lg:mx-auto",
                   "lg:sticky lg:top-[88px] lg:self-start",
                   "lg:max-h-[calc(100vh-120px)] lg:overflow-y-auto",
                 )}
               >
-                <TrendingBetsSidebar markets={trendingSidebarMarkets} />
+                <TrendingBetsSidebar markets={trendingSidebarMarkets} listReturnUrl={feedListReturnUrl} />
               </aside>
             </div>
           )}
 
-          {/* bets 모드: 2:1 그리드 + 인기 게시글 사이드바 */}
+          {/* bets 모드: 넓은 보트 영역 + 좁은 핫 토론 사이드바 */}
           {viewMode === "bets" && (
             <div
               className={cn(
                 "min-w-0 xl:col-start-2 xl:col-end-4",
-                "grid grid-cols-1 gap-8 lg:grid-cols-3 lg:items-start lg:gap-8",
+                "grid grid-cols-1 gap-6 lg:gap-6 lg:items-start",
+                "lg:grid-cols-[minmax(0,1fr)_minmax(200px,260px)]",
               )}
             >
-              <section className="min-w-0 lg:col-span-2">
-                {filteredMarkets.length > 0 ? (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:gap-5">
-                    {filteredMarkets.map((market) => (
-                      <MarketCard
-                        key={market.id}
-                        market={market}
-                        onClick={() => router.push(`/market/${market.id}`)}
-                      />
-                    ))}
-                  </div>
-                ) : (
-                  <div className="flex flex-col items-center justify-center py-16 text-center">
-                    <div className="size-16 rounded-full bg-secondary flex items-center justify-center mb-4">
-                      <span className="text-3xl text-muted-foreground">?</span>
-                    </div>
-                    <h3 className="text-lg font-semibold text-foreground mb-2">
-                      보트를 찾을 수 없습니다
-                    </h3>
-                    <p className="text-sm text-muted-foreground max-w-sm">
-                      {searchQuery
-                        ? `"${searchQuery}"에 해당하는 보트가 없습니다. 다른 검색어를 시도해보세요.`
-                        : "이 카테고리에는 아직 보트가 없습니다."}
-                    </p>
-                  </div>
-                )}
+              <section className="min-w-0">
+                <BetFeedListSection
+                  markets={filteredMarkets}
+                  hasMore={feedHasMore}
+                  isLoadingInitial={isLoadingFeed}
+                  isLoadingMore={isLoadingMoreFeed}
+                  sentinelRef={loadMoreSentinelRef}
+                  emptyState={betFeedEmpty}
+                  onMarketNavigate={navigateToMarket}
+                />
               </section>
               <aside
                 className={cn(
-                  "hidden lg:block lg:col-span-1 w-full shrink-0",
+                  "hidden lg:block w-full min-w-0 shrink-0",
                   "lg:sticky lg:top-20 lg:self-start",
                   "lg:max-h-[calc(100vh-5rem)] lg:overflow-y-auto",
                 )}
               >
-                <TrendingPostsSidebar />
+                <TrendingPostsSidebar className="w-full" />
               </aside>
             </div>
           )}

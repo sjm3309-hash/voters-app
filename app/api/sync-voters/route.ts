@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/utils/supabase/service-role";
 import { getTeamColor } from "@/lib/team-colors";
 import { officialSyncedBetColumns, validateAdminUserId } from "@/lib/admin-sync-bets";
+import { isExternalBetSyncDisabled } from "@/lib/external-bet-sync";
 
 const LOG = "[sync-voters]";
 const CONFIRMED_AFTER_MS = 3 * 60 * 60 * 1000;
@@ -227,6 +228,19 @@ async function fetchSafely(apiName: string, url: string, init: RequestInit) {
 }
 
 async function runSyncVoters(request: Request, requestMethod: "GET" | "POST") {
+  if (isExternalBetSyncDisabled()) {
+    return NextResponse.json(
+      {
+        success: true,
+        ok: true,
+        skipped: true,
+        reason:
+          "DISABLE_EXTERNAL_BET_SYNC — 외부 API 자동 보트 동기화가 비활성화되었습니다.",
+      },
+      { status: 200 },
+    );
+  }
+
   const nowISO = new Date().toISOString();
   console.log(LOG, "start", { method: requestMethod, nowISO });
 

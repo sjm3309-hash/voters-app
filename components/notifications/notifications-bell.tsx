@@ -1,12 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Bell, Trophy } from "lucide-react";
-import { loadBoardPosts, type BoardPost } from "@/lib/board";
-import { loadComments, type Comment } from "@/lib/comments";
+import { Bell, Check, CheckCheck, MessageSquare, Trophy, Trash2 } from "lucide-react";
 import { loadUserMarkets, type UserMarket } from "@/lib/markets";
 import { createClient } from "@/utils/supabase/client";
+import type { DbNotification } from "@/app/api/notifications/route";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -15,69 +14,43 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 export function NotificationsBell() {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [userName, setUserName] = useState("");
   const [userId, setUserId] = useState("");
-  const [posts, setPosts] = useState<BoardPost[]>([]);
-  const [comments, setComments] = useState<Comment[]>([]);
+  const [notifications, setNotifications] = useState<DbNotification[]>([]);
   const [userMarkets, setUserMarkets] = useState<UserMarket[]>([]);
+  const [loadingNotif, setLoadingNotif] = useState(false);
 
+  // ─── 현재 유저 ──────────────────────────────────────────────────────────
   useEffect(() => {
     const supabase = createClient();
-
-    const loadAll = () => {
-      setPosts(loadBoardPosts());
-      setComments(loadComments());
-      setUserMarkets(loadUserMarkets());
-    };
-
     supabase.auth.getSession().then(({ data: { session } }) => {
       const u = session?.user;
-      if (!u) return;
-      const name =
-        u.user_metadata?.nickname ??
-        u.user_metadata?.full_name ??
-        u.user_metadata?.name ??
-        u.email?.split("@")[0] ?? "";
-      setUserName(name);
-      setUserId(u.id);
+      if (u) setUserId(u.id);
     });
-
     const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
-      const u = session?.user;
-      if (!u) { setUserName(""); setUserId(""); return; }
-      const name =
-        u.user_metadata?.nickname ??
-        u.user_metadata?.full_name ??
-        u.user_metadata?.name ??
-        u.email?.split("@")[0] ?? "";
-      setUserName(name);
-      setUserId(u.id);
+      setUserId(session?.user?.id ?? "");
     });
-
-    loadAll();
-
-    const onCommentsUpdated = () => setComments(loadComments());
-    const onPostsUpdated = () => setPosts(loadBoardPosts());
-    const onMarketsUpdated = () => setUserMarkets(loadUserMarkets());
-
-    window.addEventListener("voters:commentsUpdated", onCommentsUpdated as EventListener);
-    window.addEventListener("voters:postsUpdated", onPostsUpdated as EventListener);
-    window.addEventListener("voters:marketsUpdated", onMarketsUpdated as EventListener);
-    window.addEventListener("storage", loadAll);
-    return () => {
-      authListener.subscription.unsubscribe();
-      window.removeEventListener("voters:commentsUpdated", onCommentsUpdated as EventListener);
-      window.removeEventListener("voters:postsUpdated", onPostsUpdated as EventListener);
-      window.removeEventListener("voters:marketsUpdated", onMarketsUpdated as EventListener);
-      window.removeEventListener("storage", loadAll);
-    };
+    return () => authListener.subscription.unsubscribe();
   }, []);
 
-  // ─── 결과 입력 대기 보트 (창작자 전용) ─────────────────────────────────────
+  // ─── 결과 입력 대기 보트 (창작자 전용) ─────────────────────────────────
+  useEffect(() => {
+    if (!userId) return;
+    setUserMarkets(loadUserMarkets());
+    const onMarketsUpdated = () => setUserMarkets(loadUserMarkets());
+    window.addEventListener("voters:marketsUpdated", onMarketsUpdated as EventListener);
+    window.addEventListener("storage", onMarketsUpdated as EventListener);
+    return () => {
+      window.removeEventListener("voters:marketsUpdated", onMarketsUpdated as EventListener);
+      window.removeEventListener("storage", onMarketsUpdated as EventListener);
+    };
+  }, [userId]);
+
   const pendingSettlements = useMemo(() => {
     if (!userId) return [] as UserMarket[];
     const now = new Date();
@@ -90,45 +63,100 @@ export function NotificationsBell() {
     );
   }, [userMarkets, userId]);
 
-  // ─── 댓글 알림 ────────────────────────────────────────────────────────────
-  const myPostIds = useMemo(() => {
-    if (!userName) return new Set<string>();
-    return new Set(posts.filter((p) => p.author === userName).map((p) => p.id));
-  }, [posts, userName]);
+  // ─── DB 알림 로드 ────────────────────────────────────────────────────────
+  const fetchNotifications = useCallback(async () => {
+    if (!userId) return;
+    setLoadingNotif(true);
+    try {
+      const res = await fetch("/api/notifications", { credentials: "same-origin" });
+      if (!res.ok) return;
+      const json = await res.json();
+      if (json.ok && Array.isArray(json.notifications)) {
+        setNotifications(json.notifications);
+      }
+    } catch {
+      // ignore
+    } finally {
+      setLoadingNotif(false);
+    }
+  }, [userId]);
 
-  const postTitleById = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const p of posts) map.set(p.id, p.title);
-    return map;
-  }, [posts]);
-
-  const lastSeenKey = useMemo(() => `voters.notifications.lastSeen.${userId || "anon"}`, [userId]);
-
-  const [lastSeenMs, setLastSeenMs] = useState(0);
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    const raw = window.localStorage.getItem(lastSeenKey);
-    const n = raw ? Number(raw) : 0;
-    setLastSeenMs(Number.isFinite(n) ? n : 0);
-  }, [lastSeenKey, open]);
+    fetchNotifications();
+  }, [fetchNotifications]);
 
-  const commentNotifications = useMemo(() => {
-    if (!userName) return [];
-    return comments
-      .filter((c) => myPostIds.has(c.postId) && c.author !== userName)
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-      .slice(0, 20);
-  }, [comments, myPostIds, userName]);
+  // ─── Supabase Realtime: 새 알림 실시간 구독 ─────────────────────────────
+  useEffect(() => {
+    if (!userId) return;
+    const supabase = createClient();
+    const channel = supabase
+      .channel(`notifications_user_${userId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "notifications",
+          filter: `user_id=eq.${userId}`,
+        },
+        (payload) => {
+          const row = payload.new as Record<string, unknown>;
+          const newNotif: DbNotification = {
+            id: String(row.id),
+            userId: String(row.user_id),
+            message: String(row.message ?? ""),
+            link: typeof row.link === "string" ? row.link : null,
+            isRead: Boolean(row.is_read),
+            createdAt: typeof row.created_at === "string" ? row.created_at : new Date().toISOString(),
+          };
+          setNotifications((prev) => [newNotif, ...prev]);
+        },
+      )
+      .subscribe();
 
-  const hasUnreadComments = useMemo(
-    () => commentNotifications.some((n) => new Date(n.createdAt).getTime() > lastSeenMs),
-    [commentNotifications, lastSeenMs],
-  );
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [userId]);
 
+  // ─── 알림 열기 → 전체 읽음 처리 ─────────────────────────────────────────
+  const handleOpen = useCallback(async (next: boolean) => {
+    setOpen(next);
+    if (!next || !userId) return;
+    const unread = notifications.filter((n) => !n.isRead);
+    if (unread.length === 0) return;
+    try {
+      await fetch("/api/notifications", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ markAll: true }),
+      });
+      setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+    } catch {
+      // ignore
+    }
+  }, [userId, notifications]);
+
+  const handleDeleteAll = async () => {
+    try {
+      await fetch("/api/notifications?all=true", {
+        method: "DELETE",
+        credentials: "same-origin",
+      });
+      setNotifications([]);
+    } catch {
+      // ignore
+    }
+  };
+
+  const unreadCount = notifications.filter((n) => !n.isRead).length;
   const hasPendingSettlement = pendingSettlements.length > 0;
+  const hasUnread = unreadCount > 0;
+  const totalBadgeCount = unreadCount + pendingSettlements.length;
 
-  // ─── 로그인 안 된 경우 ─────────────────────────────────────────────────────
-  if (!userName) {
+  // ─── 로그인 안 된 경우 ─────────────────────────────────────────────────
+  if (!userId) {
     return (
       <button className="relative p-2 rounded-lg hover:bg-secondary transition-colors hidden sm:flex">
         <Bell className="size-5 text-muted-foreground" />
@@ -136,43 +164,45 @@ export function NotificationsBell() {
     );
   }
 
-  const totalCount = commentNotifications.length + pendingSettlements.length;
-
   return (
-    <DropdownMenu
-      open={open}
-      onOpenChange={(next) => {
-        setOpen(next);
-        if (next) {
-          window.localStorage.setItem(lastSeenKey, String(Date.now()));
-          setLastSeenMs(Date.now());
-        }
-      }}
-    >
+    <DropdownMenu open={open} onOpenChange={handleOpen}>
       <DropdownMenuTrigger asChild>
         <button className="relative p-2 rounded-lg hover:bg-secondary transition-colors hidden sm:flex">
-          <Bell className="size-5 text-muted-foreground" />
-          {/* 결과 입력 대기 → 보라색 점 (우선) */}
+          <Bell className={cn("size-5", hasUnread || hasPendingSettlement ? "text-foreground" : "text-muted-foreground")} />
           {hasPendingSettlement && (
             <span className="absolute top-1 right-1 size-2.5 rounded-full bg-chart-5 ring-2 ring-background animate-pulse" />
           )}
-          {/* 댓글 알림만 있을 때 → 파란색 점 */}
-          {!hasPendingSettlement && hasUnreadComments && (
-            <span className="absolute top-1 right-1 size-2 rounded-full bg-neon-blue" />
+          {!hasPendingSettlement && hasUnread && (
+            <span className="absolute top-1 right-1 size-2 rounded-full bg-neon-blue ring-1 ring-background" />
+          )}
+          {totalBadgeCount > 0 && (
+            <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 flex items-center justify-center rounded-full bg-destructive text-[10px] font-bold text-destructive-foreground px-1 ring-2 ring-background">
+              {totalBadgeCount > 99 ? "99+" : totalBadgeCount}
+            </span>
           )}
         </button>
       </DropdownMenuTrigger>
 
-      <DropdownMenuContent align="end" className="w-[360px]">
-        <DropdownMenuLabel className="flex items-center justify-between">
-          <span>알림</span>
-          {totalCount > 0 && (
-            <span className="text-xs text-muted-foreground font-normal">{totalCount}개</span>
-          )}
+      <DropdownMenuContent align="end" className="w-[380px] max-h-[520px] overflow-y-auto">
+        <DropdownMenuLabel className="flex items-center justify-between sticky top-0 bg-popover z-10 pb-2">
+          <span className="font-semibold">알림</span>
+          <div className="flex items-center gap-1">
+            {notifications.length > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 text-xs text-muted-foreground"
+                onClick={handleDeleteAll}
+              >
+                <Trash2 className="size-3 mr-1" />
+                전체 삭제
+              </Button>
+            )}
+          </div>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
 
-        {/* ─── 결과 입력 대기 보트 (보라색 강조) ─────────────────────────── */}
+        {/* ─── 결과 입력 대기 보트 ───────────────────────────────────── */}
         {pendingSettlements.length > 0 && (
           <>
             <div className="px-2 py-1">
@@ -189,7 +219,7 @@ export function NotificationsBell() {
                   setOpen(false);
                   router.push(`/market/${m.id}`);
                 }}
-                className="flex flex-col items-start gap-1 border-l-2 border-chart-5/50 pl-3 ml-1 my-0.5"
+                className="flex flex-col items-start gap-1 border-l-2 border-chart-5/50 pl-3 ml-1 my-0.5 cursor-pointer"
               >
                 <div className="flex items-center gap-1.5 w-full">
                   <span
@@ -209,54 +239,70 @@ export function NotificationsBell() {
                 </div>
               </DropdownMenuItem>
             ))}
-            {commentNotifications.length > 0 && <DropdownMenuSeparator />}
+            {notifications.length > 0 && <DropdownMenuSeparator />}
           </>
         )}
 
-        {/* ─── 댓글 알림 ──────────────────────────────────────────────────── */}
-        {commentNotifications.length > 0 && (
+        {/* ─── DB 알림 (댓글 등) ─────────────────────────────────────── */}
+        {notifications.length > 0 && (
           <>
             <div className="px-2 py-1">
-              <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
-                댓글 알림
+              <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+                <MessageSquare className="size-3" />
+                활동 알림
+                {unreadCount > 0 && (
+                  <span className="ml-1 px-1.5 py-0.5 rounded-full bg-neon-blue/15 text-neon-blue text-[10px] font-bold">
+                    {unreadCount} 새 알림
+                  </span>
+                )}
               </p>
             </div>
-            {commentNotifications.slice(0, 8).map((n) => (
+            {notifications.map((n) => (
               <DropdownMenuItem
                 key={n.id}
                 onSelect={(e) => {
                   e.preventDefault();
                   setOpen(false);
-                  router.push(`/board/${n.postId}`);
+                  if (n.link) router.push(n.link);
                 }}
-                className="flex flex-col items-start gap-1"
+                className={cn(
+                  "flex flex-col items-start gap-1 cursor-pointer my-0.5",
+                  !n.isRead && "bg-neon-blue/5 border-l-2 border-neon-blue/40 pl-3 ml-1",
+                )}
               >
                 <div className="flex items-center gap-2 w-full">
-                  {new Date(n.createdAt).getTime() > lastSeenMs && (
+                  {!n.isRead && (
                     <span className="size-1.5 rounded-full bg-neon-blue shrink-0" />
                   )}
-                  <div className="text-sm font-medium text-foreground line-clamp-1 flex-1">
-                    {postTitleById.get(n.postId) ?? "게시글"}
+                  <div className="text-sm text-foreground line-clamp-2 flex-1 leading-snug">
+                    {n.message}
                   </div>
                 </div>
-                <div className="w-full text-xs text-muted-foreground line-clamp-2">
-                  {n.author}: {n.content}
-                </div>
-                <div className="text-[11px] text-muted-foreground/70">
-                  {new Date(n.createdAt).toLocaleString("ko-KR")}
+                <div className="text-[11px] text-muted-foreground/70 pl-0.5">
+                  {new Date(n.createdAt).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })}
                 </div>
               </DropdownMenuItem>
             ))}
           </>
         )}
 
-        {totalCount === 0 && (
-          <div className="px-2 py-8 text-center text-sm text-muted-foreground">
-            알림이 없습니다.
+        {/* ─── 비어 있을 때 ────────────────────────────────────────────── */}
+        {pendingSettlements.length === 0 && notifications.length === 0 && (
+          <div className="px-2 py-10 text-center text-sm text-muted-foreground">
+            {loadingNotif ? (
+              <span className="inline-flex items-center gap-2">
+                <span className="size-4 border-2 border-muted-foreground/30 border-t-muted-foreground rounded-full animate-spin" />
+                불러오는 중...
+              </span>
+            ) : (
+              <>
+                <CheckCheck className="size-8 mx-auto mb-2 text-muted-foreground/40" />
+                알림이 없습니다.
+              </>
+            )}
           </div>
         )}
       </DropdownMenuContent>
     </DropdownMenu>
   );
 }
-

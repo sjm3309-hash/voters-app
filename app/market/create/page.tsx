@@ -7,36 +7,52 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import {
-  MARKET_CATEGORIES,
-  OPTION_COLORS,
-  generateMarketId,
-  saveUserMarket,
-  type UserMarket,
-} from "@/lib/markets";
-import { createClient } from "@/utils/supabase/client";
-import { spendUserPoints, isAdminUser, useUserPointsBalance } from "@/lib/points";
+import { MARKET_CATEGORIES, OPTION_COLORS } from "@/lib/markets";
+import { isAdminUser, useUserPointsBalance, refreshPebblesFromServer } from "@/lib/points";
 import { CREATOR_FEE_RATE } from "@/lib/market-settlement";
+import { CREATE_USER_MARKET_COST } from "@/lib/points-constants";
+import { getSubCategories, hasSubCategories, defaultSubCategory } from "@/lib/subcategories";
+import { toast } from "sonner";
 
-const CREATE_COST = 10_000; // 보트 만들기 비용 (페블)
+const CREATE_COST = CREATE_USER_MARKET_COST;
 
 const MAX_OPTIONS = 5;
 const MIN_OPTIONS = 2;
 
-// ─── 선택 가능한 색상 팔레트 ──────────────────────────────────────────────────
+// SUBCATEGORY_MAP → lib/subcategories.ts의 getSubCategories() 사용
+
+// ─── 선택 가능한 색상 팔레트 (24색) ─────────────────────────────────────────
 const COLOR_PALETTE = [
-  { id: "blue",    label: "파랑",  value: "oklch(0.7 0.18 230)" },
-  { id: "green",   label: "초록",  value: "oklch(0.7 0.18 150)" },
-  { id: "red",     label: "빨강",  value: "oklch(0.65 0.22 25)"  },
-  { id: "yellow",  label: "노랑",  value: "oklch(0.75 0.15 80)"  },
-  { id: "purple",  label: "보라",  value: "oklch(0.65 0.2 300)"  },
-  { id: "orange",  label: "주황",  value: "oklch(0.72 0.19 55)"  },
-  { id: "pink",    label: "분홍",  value: "oklch(0.72 0.18 350)" },
-  { id: "cyan",    label: "하늘",  value: "oklch(0.75 0.13 200)" },
-  { id: "lime",    label: "연두",  value: "oklch(0.78 0.17 130)" },
-  { id: "indigo",  label: "남색",  value: "oklch(0.6 0.2 265)"   },
-  { id: "rose",    label: "장미",  value: "oklch(0.65 0.22 10)"  },
-  { id: "teal",    label: "청록",  value: "oklch(0.68 0.14 185)" },
+  // Row 1 — 레드/핑크/로즈
+  { id: "red",       label: "빨강",   value: "oklch(0.65 0.22 25)"  },
+  { id: "rose",      label: "장미",   value: "oklch(0.65 0.22 10)"  },
+  { id: "pink",      label: "분홍",   value: "oklch(0.72 0.18 350)" },
+  { id: "fuchsia",   label: "퓨샤",   value: "oklch(0.68 0.22 320)" },
+  // Row 2 — 오렌지/노랑/라임
+  { id: "orange",    label: "주황",   value: "oklch(0.72 0.19 55)"  },
+  { id: "amber",     label: "황금",   value: "oklch(0.76 0.18 70)"  },
+  { id: "yellow",    label: "노랑",   value: "oklch(0.82 0.15 88)"  },
+  { id: "lime",      label: "연두",   value: "oklch(0.78 0.17 130)" },
+  // Row 3 — 초록/청록/하늘
+  { id: "green",     label: "초록",   value: "oklch(0.7 0.18 150)"  },
+  { id: "emerald",   label: "에메랄드", value: "oklch(0.68 0.17 160)" },
+  { id: "teal",      label: "청록",   value: "oklch(0.68 0.14 185)" },
+  { id: "cyan",      label: "하늘",   value: "oklch(0.75 0.13 200)" },
+  // Row 4 — 파랑/남색/보라
+  { id: "sky",       label: "스카이",  value: "oklch(0.73 0.15 215)" },
+  { id: "blue",      label: "파랑",   value: "oklch(0.7 0.18 230)"  },
+  { id: "indigo",    label: "남색",   value: "oklch(0.6 0.2 265)"   },
+  { id: "violet",    label: "바이올렛", value: "oklch(0.63 0.2 285)"  },
+  // Row 5 — 보라/슬레이트/회색/검정
+  { id: "purple",    label: "보라",   value: "oklch(0.65 0.2 300)"  },
+  { id: "grape",     label: "포도",   value: "oklch(0.55 0.18 305)" },
+  { id: "slate",     label: "슬레이트", value: "oklch(0.62 0.04 240)" },
+  { id: "gray",      label: "회색",   value: "oklch(0.7 0.01 240)"  },
+  // Row 6 — 화이트/기타
+  { id: "stone",     label: "스톤",   value: "oklch(0.72 0.03 60)"  },
+  { id: "silver",    label: "실버",   value: "oklch(0.82 0.01 240)" },
+  { id: "gold",      label: "골드",   value: "oklch(0.78 0.12 70)"  },
+  { id: "coral",     label: "코럴",   value: "oklch(0.7 0.19 35)"   },
 ] as const;
 
 // ─── 옵션 타입 ────────────────────────────────────────────────────────────────
@@ -67,6 +83,9 @@ function ColorPicker({
     return () => document.removeEventListener("mousedown", onClickOutside);
   }, [open]);
 
+  // hex 값이면 그대로, oklch이면 oklch 표시
+  const isCustom = !COLOR_PALETTE.some((c) => c.value === value);
+
   return (
     <div ref={ref} className="relative shrink-0">
       {/* 색상 버튼 */}
@@ -80,8 +99,8 @@ function ColorPicker({
 
       {/* 팝오버 */}
       {open && (
-        <div className="absolute left-0 top-9 z-50 p-3 rounded-xl border border-border/60 bg-popover shadow-xl w-[188px]">
-          <p className="text-[11px] text-muted-foreground mb-2 font-medium">색상 선택</p>
+        <div className="absolute left-0 top-9 z-50 p-3 rounded-xl border border-border/60 bg-popover shadow-xl w-[212px]">
+          <p className="text-[11px] text-muted-foreground mb-2 font-medium">프리셋 색상 (24색)</p>
           <div className="grid grid-cols-6 gap-1.5">
             {COLOR_PALETTE.map((c) => {
               const isSelected = c.value === value;
@@ -104,6 +123,32 @@ function ColorPicker({
                 </button>
               );
             })}
+          </div>
+
+          {/* 구분선 + 직접 입력 */}
+          <div className="mt-3 pt-2.5 border-t border-border/40">
+            <p className="text-[11px] text-muted-foreground mb-2 font-medium">직접 색상 선택</p>
+            <div className="flex items-center gap-2">
+              <input
+                type="color"
+                defaultValue={value.startsWith("#") ? value : "#6366f1"}
+                onChange={(e) => onChange(e.target.value)}
+                className="size-8 rounded-lg cursor-pointer border border-border/50 bg-transparent p-0.5"
+                title="색상 직접 선택"
+              />
+              <span className="text-[11px] text-muted-foreground flex-1">
+                {isCustom ? "커스텀 색상 적용 중" : "원하는 색을 자유롭게 선택"}
+              </span>
+              {isCustom && (
+                <button
+                  type="button"
+                  onClick={() => { onChange(COLOR_PALETTE[0].value); }}
+                  className="text-[10px] text-muted-foreground hover:text-foreground transition-colors px-1.5 py-0.5 rounded-md hover:bg-secondary"
+                >
+                  초기화
+                </button>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -162,6 +207,7 @@ function CreateConfirmDialog({ question, balance, isAdmin, onConfirm, onCancel, 
         <div className="p-6 space-y-5">
           {/* 닫기 */}
           <button
+            type="button"
             onClick={onCancel}
             className="absolute top-4 right-4 p-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors"
           >
@@ -197,10 +243,10 @@ function CreateConfirmDialog({ question, balance, isAdmin, onConfirm, onCancel, 
               </span>
             </div>
 
-            {/* 생성 후 잔액 */}
+            {/* 생성 후 보유 페블 */}
             {!isAdmin && (
               <div className="flex items-center justify-between pt-2 border-t border-border/30">
-                <span className="text-xs text-muted-foreground">생성 후 잔액</span>
+                <span className="text-xs text-muted-foreground">생성 후 보유 페블</span>
                 <span className={cn("text-sm font-bold", affordable ? "text-foreground" : "text-red-400")}>
                   {affordable ? (balance - CREATE_COST).toLocaleString() : "페블 부족"} P
                 </span>
@@ -215,12 +261,12 @@ function CreateConfirmDialog({ question, balance, isAdmin, onConfirm, onCancel, 
               <p className="text-xs font-semibold text-chart-5">창작자 수익 안내</p>
             </div>
             <p className="text-xs text-muted-foreground leading-relaxed">
-              보트가 종료되고 결과가 입력되면, 전체 베팅 페블의{" "}
+              보트가 종료되고 결과가 입력되면, 전체 참여 페블의{" "}
               <span className="font-bold text-chart-5">{(CREATOR_FEE_RATE * 100).toFixed(0)}%</span>
-              를 창작자 수수료로 수령할 수 있습니다.
+              를 창작자 페블로 수령할 수 있습니다.
             </p>
             <p className="text-[11px] text-muted-foreground">
-              예) 총 베팅 10,000 P → 창작자 수령 500 P
+              예) 총 참여 10,000 P → 창작자 수령 500 P
             </p>
           </div>
 
@@ -240,12 +286,14 @@ function CreateConfirmDialog({ question, balance, isAdmin, onConfirm, onCancel, 
           {/* 버튼 */}
           <div className="flex gap-2 pt-1">
             <button
+              type="button"
               onClick={onCancel}
               className="flex-1 py-2.5 rounded-xl border border-border/50 bg-secondary/50 hover:bg-secondary text-sm font-semibold text-muted-foreground transition-colors"
             >
               취소
             </button>
             <button
+              type="button"
               onClick={onConfirm}
               disabled={!affordable || submitting}
               className="flex-1 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center justify-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -265,6 +313,54 @@ function CreateConfirmDialog({ question, balance, isAdmin, onConfirm, onCancel, 
   );
 }
 
+/** POST /api/create-user-market 실패 시 사용자용 문구 */
+function describeCreateUserMarketFailure(
+  status: number,
+  j: {
+    message?: string;
+    error?: string;
+    code?: string;
+    details?: string;
+    hint?: string;
+    errors?: { field?: string; message?: string; code?: string }[];
+  },
+): string {
+  if (status === 401) return "로그인이 필요합니다. 로그인 후 다시 시도해주세요.";
+  if (status === 503 && j.code === "SERVICE_ROLE_CONFIG") {
+    return "서버에 Supabase 서비스 롤 키가 없습니다. .env.local의 SUPABASE_SERVICE_ROLE_KEY를 확인하고 개발 서버를 재시작해 주세요.";
+  }
+  if (status === 400 && Array.isArray(j.errors) && j.errors.length > 0) {
+    return j.errors
+      .map((e) => `${String(e.field ?? "?")}: ${String(e.message ?? e.code ?? "")}`)
+      .join(" · ");
+  }
+  const raw = (j.message ?? j.error ?? "").trim();
+  const map: Record<string, string> = {
+    "question too short": "질문은 5자 이상이어야 합니다.",
+    "invalid category": "선택한 카테고리를 서버에서 처리할 수 없습니다. 다른 카테고리를 선택해 주세요.",
+    "invalid endsAt": "마감 일시 형식이 올바르지 않습니다.",
+    "invalid resultAt": "결과 발표 일시 형식이 올바르지 않습니다.",
+    "endsAt must be future":
+      "마감 일시가 이미 지났습니다. 확인 창을 오래 연 경우 마감·결과 일시를 다시 선택해 주세요.",
+    "resultAt must be after endsAt": "결과 발표는 마감 이후로 설정해 주세요.",
+    "options count must be 2–5": "선택지는 2~5개여야 합니다.",
+    "duplicate option labels": "선택지 이름이 중복되었습니다.",
+    "duplicate option colors": "선택지 색이 중복되었습니다.",
+    unauthorized: "로그인이 필요합니다.",
+    insufficient_pebbles: "페블이 부족합니다. 보유 페블을 확인해 주세요.",
+  };
+  if (raw === "insufficient_pebbles" || j.error === "insufficient_pebbles") {
+    return map.insufficient_pebbles;
+  }
+  if (raw && map[raw]) return map[raw];
+  if (raw) {
+    const extra = [j.details, j.hint].filter(Boolean).join(" ");
+    return extra ? `등록에 실패했습니다: ${raw} (${extra})` : `등록에 실패했습니다: ${raw}`;
+  }
+  if (status >= 500) return `서버 오류(${status}). 잠시 후 다시 시도해 주세요.`;
+  return "보트를 서버에 등록하지 못했습니다. 입력을 확인한 뒤 다시 시도해 주세요.";
+}
+
 // ─── 메인 페이지 ─────────────────────────────────────────────────────────────
 function CreateMarketPageInner() {
   const router = useRouter();
@@ -276,10 +372,19 @@ function CreateMarketPageInner() {
     return MARKET_CATEGORIES.some((m) => m.id === c) ? c! : "fun";
   })();
 
-  const [question, setQuestion]     = useState("");
+  const [question, setQuestion]       = useState("");
   const [description, setDescription] = useState("");
-  const [category, setCategory]     = useState(initialCategory);
-  const [resolver, setResolver]     = useState("");
+  const [category, setCategory]       = useState(initialCategory);
+  const [subCategory, setSubCategory] = useState<string>(
+    () => defaultSubCategory(initialCategory) ?? "other"
+  );
+  const [resolver, setResolver]       = useState("");
+
+  // 카테고리 변경 시 세부카테고리 첫 번째로 리셋
+  const handleCategoryChange = (catId: string) => {
+    setCategory(catId);
+    setSubCategory(defaultSubCategory(catId) ?? "other");
+  };
   const [submitting, setSubmitting] = useState(false);
   const [error, setError]           = useState("");
   const [showConfirm, setShowConfirm] = useState(false);
@@ -351,7 +456,11 @@ function CreateMarketPageInner() {
   // ── 1단계: 유효성 검사 후 확인 다이얼로그 표시 ──────────────────────────
   const handleSubmit = () => {
     const err = validate();
-    if (err) { setError(err); return; }
+    if (err) {
+      setError(err);
+      toast.error(err);
+      return;
+    }
     setError("");
     setShowConfirm(true);
   };
@@ -364,7 +473,9 @@ function CreateMarketPageInner() {
 
     // 페블 잔액 확인 (운영자는 면제)
     if (!adminCreating && balance < CREATE_COST) {
-      setError(`페블이 부족합니다. ${(CREATE_COST - balance).toLocaleString()} P가 더 필요합니다.`);
+      const m = `페블이 부족합니다. ${(CREATE_COST - balance).toLocaleString()} P가 더 필요합니다.`;
+      setError(m);
+      toast.error(m);
       setShowConfirm(false);
       return;
     }
@@ -372,57 +483,54 @@ function CreateMarketPageInner() {
     setSubmitting(true);
 
     try {
-      // 10,000P 차감 (운영자는 면제)
-      if (!adminCreating) {
-        const spent = spendUserPoints(userId, CREATE_COST, "🗳️ 보트 만들기 비용");
-        if (!spent.ok) {
-          setError("페블 차감에 실패했습니다. 다시 시도해주세요.");
-          setShowConfirm(false);
-          setSubmitting(false);
-          return;
-        }
-      }
-
-      const supabase = createClient();
-      const { data: { session } } = await supabase.auth.getSession();
-      const user = session?.user ?? null;
-      const authorId   = user?.id ?? "anon";
-      const authorName =
-        user?.user_metadata?.nickname ??
-        user?.user_metadata?.full_name ??
-        user?.user_metadata?.name ??
-        user?.email?.split("@")[0] ??
-        "익명";
+      /* 페블 차감은 서버(create-user-market)에서 동일 세션 기준으로 처리 — 클라이언트 차감은 세션 불일치 시 실패할 수 있음 */
 
       const filled = options.filter((o) => o.label.trim());
-      const pct      = Math.floor(100 / filled.length);
-      const remainder = 100 - pct * filled.length;
-
-      const market: UserMarket = {
-        id: generateMarketId(),
-        question: question.trim(),
-        description: description.trim(),
-        category,
-        resolver: resolver.trim() || "운영자 판단",
-        endsAt:   kstToUtcISO(endsDate, endsTime),
-        resultAt: kstToUtcISO(resultDate, resultTime),
-        createdAt: new Date().toISOString(),
-        totalPool: 0,
-        participants: 0,
-        authorId,
-        authorName,
-        options: filled.map((o, i) => ({
-          id: `opt-${i}`,
-          label: o.label.trim(),
-          percentage: i === 0 ? pct + remainder : pct,
-          color: o.color,
-        })),
+      const res = await fetch("/api/create-user-market", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          question: question.trim(),
+          category,
+          subCategory,
+          endsAt: kstToUtcISO(endsDate, endsTime),
+          resultAt: kstToUtcISO(resultDate, resultTime),
+          options: filled.map((o) => ({ label: o.label.trim(), color: o.color })),
+        }),
+      });
+      const j = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        id?: string;
+        message?: string;
+        error?: string;
+        code?: string;
+        details?: string;
+        hint?: string;
+        errors?: { field?: string; message?: string; code?: string }[];
       };
-
-      saveUserMarket(market);
-      router.push(`/market/${market.id}`);
-    } catch {
-      setError("보트 만들기 중 오류가 발생했습니다. 다시 시도해주세요.");
+      await refreshPebblesFromServer(userId);
+      if (!res.ok || !j?.ok || typeof j.id !== "string") {
+        const msg = describeCreateUserMarketFailure(res.status, j);
+        setError(msg);
+        toast.error(msg);
+        setShowConfirm(false);
+        setSubmitting(false);
+        return;
+      }
+      setSubmitting(false);
+      setShowConfirm(false);
+      toast.success("생성 완료!");
+      router.push(`/market/${j.id}`);
+      router.refresh();
+    } catch (e) {
+      void refreshPebblesFromServer(userId);
+      const msg =
+        e instanceof Error
+          ? e.message
+          : "보트 만들기 중 오류가 발생했습니다. 다시 시도해주세요.";
+      setError(msg);
+      toast.error(msg);
       setShowConfirm(false);
       setSubmitting(false);
     }
@@ -505,16 +613,18 @@ function CreateMarketPageInner() {
         </section>
 
         {/* 카테고리 */}
-        <section className="space-y-2">
+        <section className="space-y-3">
           <label className="text-sm font-semibold text-foreground">
             카테고리 <span className="text-red-400">*</span>
           </label>
+
+          {/* 대분류 */}
           <div className="flex flex-wrap gap-2">
             {MARKET_CATEGORIES.map((cat) => (
               <button
                 key={cat.id}
                 type="button"
-                onClick={() => setCategory(cat.id)}
+                onClick={() => handleCategoryChange(cat.id)}
                 className={cn(
                   "px-4 py-1.5 rounded-full text-sm font-medium border transition-all",
                   category === cat.id
@@ -526,6 +636,30 @@ function CreateMarketPageInner() {
               </button>
             ))}
           </div>
+
+          {/* 세부 카테고리 — 해당 카테고리에 서브카테고리가 있을 때만 표시 */}
+          {hasSubCategories(category) && (
+            <div className="rounded-xl border border-border/40 bg-secondary/10 p-3 space-y-2">
+              <p className="text-xs font-semibold text-muted-foreground">세부 카테고리</p>
+              <div className="flex flex-wrap gap-1.5">
+                {getSubCategories(category).map((sub) => (
+                  <button
+                    key={sub.id}
+                    type="button"
+                    onClick={() => setSubCategory(sub.id)}
+                    className={cn(
+                      "px-3 py-1 rounded-full text-xs font-medium border transition-all",
+                      subCategory === sub.id
+                        ? "bg-chart-5/20 border-chart-5/60 text-chart-5"
+                        : "bg-background border-border/40 text-muted-foreground hover:border-border hover:text-foreground"
+                    )}
+                  >
+                    {sub.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </section>
 
         {/* 선택지 */}
@@ -680,7 +814,7 @@ function CreateMarketPageInner() {
                 checks.noMisfortuneOrCrime ? "text-foreground" : "text-muted-foreground",
               )}
             >
-              타인의 불행이나 범죄를 보트(베팅) 대상으로 삼지 않았습니까?{" "}
+              타인의 불행이나 범죄를 보트 주제로 삼지 않았습니까?{" "}
               <span className="text-xs text-muted-foreground">(위반 시 제재 대상이 될 수 있습니다.)</span>
             </span>
           </label>
@@ -753,6 +887,7 @@ function CreateMarketPageInner() {
             <Link href="/">취소</Link>
           </Button>
           <Button
+            type="button"
             className={cn(
               "flex-1 font-bold transition-colors",
               !allChecked && "bg-secondary/60 text-muted-foreground hover:bg-secondary/60",

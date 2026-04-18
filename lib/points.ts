@@ -5,26 +5,25 @@ import { createClient } from "@/utils/supabase/client";
 import { cacheAuthorLevel, cacheAuthorManualLevel, getUserManualLevel } from "@/lib/level-system";
 import { registerAdminName } from "@/lib/leaderboard";
 import { isAdminEmail } from "@/lib/admin";
+import { ADMIN_BALANCE } from "@/lib/points-constants";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface PointsTransaction {
   id: string;
-  date: string;        // ISO timestamp
+  date: string;
   type: "bonus" | "vote" | "refund" | "reward" | "other";
   description: string;
-  amount: number;      // 양수 = 획득, 음수 = 사용
-  balance: number;     // 거래 후 잔액
+  amount: number;
+  balance: number;
 }
 
 // ─── Storage Keys ─────────────────────────────────────────────────────────────
 
-const POINTS_KEY   = (uid: string) => `voters.points.v2.${uid}`;
-const HISTORY_KEY  = (uid: string) => `voters.points.history.v1.${uid}`;
-const WELCOMED_KEY = (uid: string) => `voters.points.welcomed.v1.${uid}`;
-const AUTHOR_UID_KEY = "voters.author.uid.v1"; // displayName → userId 매핑
+const POINTS_KEY = (uid: string) => `voters.points.v2.${uid}`;
+const HISTORY_KEY = (uid: string) => `voters.points.history.v1.${uid}`;
+const AUTHOR_UID_KEY = "voters.author.uid.v1";
 
-/** displayName → userId 매핑 캐시 저장 */
 export function cacheAuthorUid(displayName: string, userId: string): void {
   if (typeof window === "undefined" || !displayName || !userId || userId === "anon") return;
   try {
@@ -35,7 +34,6 @@ export function cacheAuthorUid(displayName: string, userId: string): void {
   } catch {}
 }
 
-/** displayName으로 userId 조회 */
 export function getUidByDisplayName(displayName: string): string | null {
   if (typeof window === "undefined" || !displayName) return null;
   try {
@@ -43,22 +41,23 @@ export function getUidByDisplayName(displayName: string): string | null {
     if (!raw) return null;
     const cache = JSON.parse(raw) as Record<string, string>;
     return cache[displayName] ?? null;
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
 
-/** 알려진 displayName → userId 맵 전체 반환 */
 export function getAllAuthorUids(): Record<string, string> {
   if (typeof window === "undefined") return {};
   try {
     const raw = window.localStorage.getItem(AUTHOR_UID_KEY);
     return raw ? (JSON.parse(raw) as Record<string, string>) : {};
-  } catch { return {}; }
+  } catch {
+    return {};
+  }
 }
 
-export const WELCOME_BONUS   = 3000;
-export const ADMIN_BALANCE   = 1_000_000; // 운영자 고정 잔액
+export { WELCOME_BONUS, ADMIN_BALANCE } from "@/lib/points-constants";
 
-// 운영자 플래그 (userId → isAdmin) — 로그인 시 저장
 const ADMIN_FLAG_KEY = (uid: string) => `voters.admin.flag.v1.${uid}`;
 
 export function setAdminFlag(userId: string): void {
@@ -71,7 +70,7 @@ export function isAdminUser(userId: string): boolean {
   return !!window.localStorage.getItem(ADMIN_FLAG_KEY(userId));
 }
 
-// ─── Low-level point storage ──────────────────────────────────────────────────
+// ─── Low-level point storage (캐시 — 서버 GET /api/pebbles/balance 와 동기화) ─
 
 export function loadUserPoints(userId: string): number {
   if (typeof window === "undefined" || !userId || userId === "anon") return 0;
@@ -89,11 +88,9 @@ function savePoints(userId: string, amount: number): void {
   if (typeof window === "undefined" || !userId || userId === "anon") return;
   window.localStorage.setItem(POINTS_KEY(userId), JSON.stringify(amount));
   window.dispatchEvent(
-    new CustomEvent("voters:pointsUpdated", { detail: { userId, points: amount } })
+    new CustomEvent("voters:pointsUpdated", { detail: { userId, points: amount } }),
   );
 }
-
-// ─── History ──────────────────────────────────────────────────────────────────
 
 export function loadPointsHistory(userId: string): PointsTransaction[] {
   if (typeof window === "undefined" || !userId || userId === "anon") return [];
@@ -108,7 +105,7 @@ export function loadPointsHistory(userId: string): PointsTransaction[] {
 
 function appendTransaction(
   userId: string,
-  tx: Omit<PointsTransaction, "id" | "date">
+  tx: Omit<PointsTransaction, "id" | "date">,
 ): void {
   if (typeof window === "undefined" || !userId || userId === "anon") return;
   const history = loadPointsHistory(userId);
@@ -117,81 +114,117 @@ function appendTransaction(
     date: new Date().toISOString(),
     ...tx,
   };
-  history.unshift(entry); // 최신 순
+  history.unshift(entry);
   window.localStorage.setItem(HISTORY_KEY(userId), JSON.stringify(history.slice(0, 200)));
 }
 
-// ─── Public API ───────────────────────────────────────────────────────────────
-
-/** 가입 환영 보너스 3000P (최초 1회만) */
-export function grantWelcomeBonus(userId: string): void {
-  if (typeof window === "undefined" || !userId || userId === "anon") return;
-  if (window.localStorage.getItem(WELCOMED_KEY(userId))) return;
-
-  window.localStorage.setItem(WELCOMED_KEY(userId), "1");
-  const current = loadUserPoints(userId);
-  const next = current + WELCOME_BONUS;
-  savePoints(userId, next);
-  appendTransaction(userId, {
-    type: "bonus",
-    description: "🎉 가입 환영 보너스",
-    amount: WELCOME_BONUS,
-    balance: next,
-  });
+async function getSessionUserId(): Promise<string | null> {
+  const supabase = createClient();
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  return session?.user?.id ?? null;
 }
 
-/** 페블 직접 설정 (구버전 호환) */
+/** 서버 profiles.pebbles 와 동기화 후 캐시 갱신 */
+export async function refreshPebblesFromServer(userId: string): Promise<number | null> {
+  if (typeof window === "undefined" || !userId || userId === "anon") return null;
+  try {
+    const res = await fetch("/api/pebbles/balance", { credentials: "same-origin" });
+    const j = (await res.json().catch(() => ({}))) as { ok?: boolean; pebbles?: number };
+    if (!res.ok || !j.ok || typeof j.pebbles !== "number") return null;
+    savePoints(userId, j.pebbles);
+    return j.pebbles;
+  } catch {
+    return null;
+  }
+}
+
 export function setUserPoints(userId: string, nextPoints: number): void {
   if (typeof window === "undefined") return;
   savePoints(userId, Math.max(0, Math.floor(Number(nextPoints) || 0)));
 }
 
-/** 페블 소비 (보트 등) */
-export function spendUserPoints(
+/** 페블 소비 — 서버 반영 */
+export async function spendUserPoints(
   userId: string,
   amount: number,
-  description = "보트 페블 사용"
-): { ok: boolean; points: number } {
+  description = "보트 페블 사용",
+): Promise<{ ok: boolean; points: number }> {
   if (typeof window === "undefined") return { ok: false, points: 0 };
-  // 운영자는 페블 소비 불가
-  if (isAdminUser(userId)) return { ok: false, points: ADMIN_BALANCE };
+  if (isAdminUser(userId)) return { ok: true, points: ADMIN_BALANCE };
+  const sid = await getSessionUserId();
+  if (!sid || sid !== userId) return { ok: false, points: loadUserPoints(userId) };
+
   const a = Math.floor(Number(amount));
   if (!Number.isFinite(a) || a <= 0) return { ok: false, points: loadUserPoints(userId) };
-  const current = loadUserPoints(userId);
-  if (current < a) return { ok: false, points: current };
-  const next = current - a;
-  savePoints(userId, next);
+
+  const res = await fetch("/api/pebbles/adjust", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ delta: -a, description }),
+  });
+  const j = (await res.json().catch(() => ({}))) as { ok?: boolean; balance?: number; error?: string };
+
+  if (!res.ok || !j.ok || typeof j.balance !== "number") {
+    return { ok: false, points: loadUserPoints(userId) };
+  }
+
+  savePoints(userId, j.balance);
   appendTransaction(userId, {
     type: "vote",
     description,
     amount: -a,
-    balance: next,
+    balance: j.balance,
   });
-  return { ok: true, points: next };
+  return { ok: true, points: j.balance };
 }
 
-/** 페블 획득 (리워드 등) */
-export function earnUserPoints(
+/** 페블 획득 — 본인 세션이면 adjust, 타인이면 gift API */
+export async function earnUserPoints(
   userId: string,
   amount: number,
-  description = "페블 획득"
-): number {
+  description = "페블 획득",
+): Promise<number> {
   if (typeof window === "undefined") return 0;
   const a = Math.floor(Number(amount));
   if (!Number.isFinite(a) || a <= 0) return loadUserPoints(userId);
-  const current = loadUserPoints(userId);
-  const next = current + a;
-  savePoints(userId, next);
-  appendTransaction(userId, {
-    type: "reward",
-    description,
-    amount: a,
-    balance: next,
-  });
-  return next;
-}
 
-// ─── React hook ───────────────────────────────────────────────────────────────
+  const sid = await getSessionUserId();
+  if (!sid) return loadUserPoints(userId);
+
+  if (isAdminUser(userId)) return ADMIN_BALANCE;
+
+  if (sid === userId) {
+    const res = await fetch("/api/pebbles/adjust", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ delta: a, description }),
+    });
+    const j = (await res.json().catch(() => ({}))) as { ok?: boolean; balance?: number };
+    if (!res.ok || !j.ok || typeof j.balance !== "number") return loadUserPoints(userId);
+    savePoints(userId, j.balance);
+    appendTransaction(userId, {
+      type: "reward",
+      description,
+      amount: a,
+      balance: j.balance,
+    });
+    return j.balance;
+  }
+
+  const res = await fetch("/api/pebbles/gift", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ targetUserId: userId, amount: a, reason: description }),
+  });
+  const j = (await res.json().catch(() => ({}))) as { ok?: boolean; balance?: number };
+  if (!res.ok || !j.ok || typeof j.balance !== "number") return loadUserPoints(userId);
+  return j.balance;
+}
 
 export function useUserPointsBalance() {
   const [userId, setUserId] = useState<string>("anon");
@@ -200,23 +233,23 @@ export function useUserPointsBalance() {
   useEffect(() => {
     const supabase = createClient();
 
-    const sync = (uid: string) => {
+    const syncLocal = (uid: string) => {
       setUserId(uid);
       setPoints(loadUserPoints(uid));
     };
 
-    const applySession = (uid: string, user: import("@supabase/supabase-js").User | null) => {
-      if (uid !== "anon") {
-        const admin = isAdminEmail(user?.email);
-        if (admin) {
-          // 운영자: 플래그 저장 + 잔액 고정
-          setAdminFlag(uid);
-          setUserId(uid);
-          setPoints(ADMIN_BALANCE);
-        } else {
-          grantWelcomeBonus(uid);
-        }
-        // display name → 레벨 캐시 업데이트 (게시글/댓글 아이콘에 사용)
+    const pullBalance = async (uid: string, user: import("@supabase/supabase-js").User | null) => {
+      const admin = isAdminEmail(user?.email);
+      if (admin) {
+        setAdminFlag(uid);
+        setUserId(uid);
+        setPoints(ADMIN_BALANCE);
+        return;
+      }
+      const bal = await refreshPebblesFromServer(uid);
+      if (typeof bal === "number") {
+        setUserId(uid);
+        setPoints(bal);
         const displayName =
           user?.user_metadata?.nickname ??
           user?.user_metadata?.full_name ??
@@ -224,19 +257,42 @@ export function useUserPointsBalance() {
           user?.email?.split("@")[0] ??
           "";
         if (displayName) {
-          cacheAuthorLevel(displayName, admin ? ADMIN_BALANCE : loadUserPoints(uid));
-          // 수동 레벨 캐시 업데이트 (AuthorLevelIcon 표시용)
+          cacheAuthorLevel(displayName, bal);
           cacheAuthorManualLevel(displayName, getUserManualLevel(uid));
-          // displayName → userId 매핑 저장 (관리자 페블 지급용)
           cacheAuthorUid(displayName, uid);
-          // 운영자면 리더보드 제외 목록에 등록
+        }
+      } else {
+        syncLocal(uid);
+      }
+    };
+
+    const applySession = (uid: string, user: import("@supabase/supabase-js").User | null) => {
+      if (uid !== "anon") {
+        const admin = isAdminEmail(user?.email);
+        const displayName =
+          user?.user_metadata?.nickname ??
+          user?.user_metadata?.full_name ??
+          user?.user_metadata?.name ??
+          user?.email?.split("@")[0] ??
+          "";
+        if (displayName) {
+          cacheAuthorManualLevel(displayName, getUserManualLevel(uid));
+          cacheAuthorUid(displayName, uid);
           if (admin) {
             registerAdminName(displayName);
           }
         }
-        if (!admin) sync(uid);
+
+        if (admin) {
+          setAdminFlag(uid);
+          setUserId(uid);
+          setPoints(ADMIN_BALANCE);
+          if (displayName) cacheAuthorLevel(displayName, ADMIN_BALANCE);
+        } else {
+          void pullBalance(uid, user);
+        }
       } else {
-        sync(uid);
+        syncLocal(uid);
       }
     };
 
@@ -253,13 +309,11 @@ export function useUserPointsBalance() {
     const onUpdated = (e: Event) => {
       const ev = e as CustomEvent<{ userId: string; points: number }>;
       if (ev.detail) {
-        // 운영자는 항상 고정 잔액 유지
         if (isAdminUser(ev.detail.userId)) {
           setPoints(ADMIN_BALANCE);
           return;
         }
         setPoints(ev.detail.points);
-        // 페블 변경 시 display name 캐시도 갱신
         supabase.auth.getSession().then(({ data: { session } }) => {
           const u = session?.user;
           if (!u) return;

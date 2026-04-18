@@ -1,10 +1,32 @@
 import { NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/utils/supabase/service-role";
 import { collectSyncBetRows } from "@/lib/collect-sync-bet-rows";
+import { isExternalBetSyncDisabled } from "@/lib/external-bet-sync";
 
 const UPSERT_BATCH = 500;
 
 async function runSyncAll() {
+  if (isExternalBetSyncDisabled()) {
+    return NextResponse.json({
+      ok: true,
+      skipped: true,
+      reason:
+        "DISABLE_EXTERNAL_BET_SYNC — 외부 API 동기화가 비활성화되어 업서트하지 않았습니다.",
+      counts: {
+        collected: 0,
+        upserted: 0,
+        excluded: {
+          pandascore_too_far: 0,
+          pandascore_already_started: 0,
+          football_too_far: 0,
+          football_already_started: 0,
+          total_sources: 0,
+        },
+      },
+      savedTitles: [],
+    });
+  }
+
   const collected = await collectSyncBetRows(Date.now());
   if (!collected.ok) {
     return NextResponse.json(

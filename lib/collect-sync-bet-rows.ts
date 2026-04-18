@@ -1,4 +1,5 @@
 import { getTeamColor } from "@/lib/team-colors";
+import { isExternalBetSyncDisabled } from "@/lib/external-bet-sync";
 import {
   officialSyncedBetColumns,
   validateAdminUserId,
@@ -228,6 +229,21 @@ export async function collectSyncBetRows(nowMs = Date.now()): Promise<{
    *   ...
    * }
    */
+
+  if (isExternalBetSyncDisabled()) {
+    return {
+      ok: true,
+      errors: [],
+      rows: [],
+      excluded: {
+        pandascore_too_far: 0,
+        pandascore_already_started: 0,
+        football_too_far: 0,
+        football_already_started: 0,
+        total_sources: 0,
+      },
+    };
+  }
 
   const errors: string[] = [];
   const envOk = validateRequiredSyncEnv();

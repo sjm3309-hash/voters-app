@@ -24,7 +24,6 @@ const categoryLabel: Record<BoardCategoryId, string> = {
   crypto: "크립토",
   politics: "정치",
   game: "게임",
-  suggest: "건의",
 };
 
 export function BoardPreviewClient() {

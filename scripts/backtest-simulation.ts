@@ -5,21 +5,25 @@ import crypto from "node:crypto";
 /**
  * Backtest Simulation (7 days)
  *
- * - Creates 10 temporary profiles
- * - Simulates 7 days of random betting behavior
- * - Intentionally triggers limit violations
- * - Tracks balances in-memory, writes bet_history rows to DB (service role)
+ * - 시뮬 유저가 운영 보트(sim:backtest*) 및 유저 생성 보트(sim:backtest:userboat*)에 베팅
+ * - option_id는 반드시 `${bets.id}-opt-${i}` 형태 (앱·DB와 동일). 과거 버전은 라벨 문자열을 넣어 INSERT 실패/불일치 발생.
+ * - 베팅 전후 profiles.pebbles는 adjust_pebbles_atomic 으로 차감·환불 (실제 place-bet API와 동일한 순서)
  *
  * Run:
  *   npx tsx scripts/backtest-simulation.ts
  *
- * Optional:
- *   SIM_CLEANUP=true  -> delete created profiles + bets + bet_history
+ * Env:
+ *   SIM_USER_IDS=id1,id2,...  기존 유저 목록의 시뮬 계정만 사용 (프로필 pebbles 기준 시작 잔액). 미설정 시 임시 계정 10명 생성.
+ *   SIM_CLEANUP=true          시뮬 행 정리 (SIM_USER_IDS 사용 시 프로필 삭제는 기본 끔 — 아래 참고)
+ *   SIM_CLEANUP_PROFILES=true SIM_USER_IDS 없을 때만 의미 있음 / 있어도 프로필 삭제 시 이 플래그 필요
  */
 
-const MAX_BET_PER_ONCE = 5000;
+/** 동일 보트(마켓)당 유저 누적 스테이크 상한 (앱 place-bet 과 동일) */
+const MAX_STAKE_PER_MARKET = 5000;
 const MAX_BET_PER_DAY = 30000;
 const MAX_BET_PER_WEEK = 150000;
+
+type MemoryLedgerRow = { ts: number; amount: number; marketId: string };
 
 const TEST_USER_COUNT = 10;
 const SIM_DAYS = 7;
@@ -80,6 +84,139 @@ function pickOne<T>(arr: T[]): T {
 function parseOptions(raw: unknown): string[] {
   if (!Array.isArray(raw)) return [];
   return raw.filter((x): x is string => typeof x === "string" && x.trim() !== "");
+}
+
+/** 앱 lib/bets-market-mapper 의 옵션 id 규칙과 동일 */
+function randomOptionIdForBet(bet: BetRow): string {
+  const labels = parseOptions(bet.options);
+  const n = Math.max(labels.length, 2);
+  const idx = randInt(0, n - 1);
+  return `${bet.id}-opt-${idx}`;
+}
+
+/** 서비스 롤 — place-bet API 와 동일한 페블 차감 (RPC + 폴백) */
+async function adjustPebblesScript(
+  supabase: ReturnType<typeof createClient>,
+  userId: string,
+  delta: number,
+): Promise<{ ok: true; balance: number } | { ok: false; error: string }> {
+  const d = Math.trunc(Number(delta));
+  if (!userId) return { ok: false, error: "invalid_user" };
+
+  const { data, error } = await supabase.rpc("adjust_pebbles_atomic", {
+    p_user_id: userId,
+    p_delta: d,
+  });
+
+  if (!error) {
+    return { ok: true, balance: Math.max(0, Math.floor(Number(data ?? 0))) };
+  }
+
+  const msg = error.message ?? String(error);
+  if (msg.includes("insufficient_pebbles")) return { ok: false, error: "insufficient_pebbles" };
+
+  const { data: row, error: selErr } = await supabase.from("profiles").select("pebbles").eq("id", userId).maybeSingle();
+  if (selErr) return { ok: false, error: selErr.message };
+
+  const cur = Math.max(0, Math.floor(Number((row as { pebbles?: unknown } | null)?.pebbles ?? 0)));
+
+  if (!row) {
+    const next = Math.max(0, cur + d);
+    if (next < 0 && d < 0) return { ok: false, error: "insufficient_pebbles" };
+    const { error: insErr } = await supabase.from("profiles").insert({ id: userId, pebbles: next });
+    if (insErr) return { ok: false, error: insErr.message };
+    return { ok: true, balance: next };
+  }
+
+  const next = cur + d;
+  if (next < 0) return { ok: false, error: "insufficient_pebbles" };
+  const { error: upErr } = await supabase.from("profiles").update({ pebbles: next }).eq("id", userId);
+  if (upErr) return { ok: false, error: upErr.message };
+  return { ok: true, balance: next };
+}
+
+async function loadSimUsersFromEnv(supabase: ReturnType<typeof createClient>): Promise<SimUser[] | null> {
+  const raw = process.env.SIM_USER_IDS?.trim();
+  if (!raw) return null;
+
+  const ids = raw
+    .split(/[\s,]+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (ids.length === 0) return null;
+
+  const { data: rows, error } = await supabase.from("profiles").select("id, pebbles").in("id", ids);
+  if (error) {
+    console.error(LOG, "SIM_USER_IDS profile load failed", error);
+    return null;
+  }
+
+  const byId = new Map((rows ?? []).map((r: { id: string; pebbles?: unknown }) => [r.id, Math.max(0, Math.floor(Number(r.pebbles ?? 0)))]));
+
+  const users: SimUser[] = ids.map((id, i) => ({
+    id,
+    displayName: `SIM_LOADED_${String(i + 1).padStart(2, "0")}`,
+    balance: byId.get(id) ?? 0,
+    openBetCount: 0,
+  }));
+
+  console.log(LOG, "using SIM_USER_IDS", { count: users.length });
+  return users;
+}
+
+async function pushSimUserBalanceToDb(supabase: ReturnType<typeof createClient>, u: SimUser) {
+  const { error } = await supabase.from("profiles").upsert(
+    { id: u.id, pebbles: Math.max(0, Math.floor(u.balance)) },
+    { onConflict: "id" },
+  );
+  if (error) {
+    await supabase.from("profiles").update({ pebbles: Math.max(0, Math.floor(u.balance)) }).eq("id", u.id);
+  }
+}
+
+/** 시뮬 유저가 만든 소규모 보트 (sim:backtest:userboat:% ) */
+async function seedUserCreatedSimMarkets(supabase: ReturnType<typeof createClient>, users: SimUser[]) {
+  const ts = Date.now();
+  const slice = users.slice(0, Math.min(6, users.length));
+  const rows = slice.map((u, i) => ({
+    external_id: `sim:backtest:userboat:${u.id}:${ts}:${i}`,
+    title: `[SIM 유저보트] ${u.displayName} D0`,
+    closing_at: new Date(ts + 72 * 60 * 60 * 1000).toISOString(),
+    confirmed_at: null as string | null,
+    category: "재미",
+    sub_category: "기타",
+    status: "active" as const,
+    color: "#6366f1",
+    options: ["예", "아니오"],
+    is_admin_generated: false,
+    author_name: u.displayName.slice(0, 120),
+    user_id: u.id,
+  }));
+
+  const { error } = await supabase.from("bets").upsert(rows, { onConflict: "external_id" });
+  if (error) console.error(LOG, "seedUserCreatedSimMarkets failed", error);
+  else console.log(LOG, "user-created sim markets upserted", { count: rows.length });
+}
+
+async function sumPoolOnMarket(
+  supabase: ReturnType<typeof createClient>,
+  marketId: string,
+): Promise<number> {
+  const q1 = await supabase.from("bet_history").select("amount").eq("market_id", marketId);
+  if (!q1.error) {
+    return (q1.data ?? []).reduce(
+      (acc, r: { amount?: unknown }) => acc + Math.max(0, Math.floor(Number(r.amount ?? 0))),
+      0,
+    );
+  }
+  const q2 = await supabase.from("bet_history").select("amount").eq("bet_id", marketId);
+  if (!q2.error) {
+    return (q2.data ?? []).reduce(
+      (acc, r: { amount?: unknown }) => acc + Math.max(0, Math.floor(Number(r.amount ?? 0))),
+      0,
+    );
+  }
+  return -1;
 }
 
 async function ensureSimBetsExist(supabase: ReturnType<typeof createClient>) {
@@ -227,6 +364,29 @@ async function loadActiveSimBets(supabase: ReturnType<typeof createClient>): Pro
   return (data ?? []) as BetRow[];
 }
 
+async function sumUserBetsOnMarketDb(
+  supabase: ReturnType<typeof createClient>,
+  userId: string,
+  marketId: string,
+  schema: BetHistorySchema,
+): Promise<number> {
+  if (schema.kind === "unknown") return 0;
+  const col = schema.marketIdKey;
+  const { data, error } = await supabase
+    .from("bet_history")
+    .select("amount")
+    .eq("user_id", userId)
+    .eq(col, marketId)
+    .limit(5000);
+
+  if (error) {
+    console.error(LOG, "sumUserBetsOnMarketDb failed", { userId, marketId, error });
+    return 0;
+  }
+
+  return (data ?? []).reduce((acc, r: { amount?: unknown }) => acc + (Number(r.amount) || 0), 0);
+}
+
 async function sumUserBetsSince(
   supabase: ReturnType<typeof createClient>,
   userId: string,
@@ -251,20 +411,35 @@ async function tryPlaceBet(params: {
   supabase: ReturnType<typeof createClient>;
   user: SimUser;
   bet: BetRow;
-  optionId: string;
   amount: number;
   now: Date;
   betHistoryExists: boolean;
-  memoryLedger: Map<string, { ts: number; amount: number }[]>;
+  memoryLedger: Map<string, MemoryLedgerRow[]>;
   betHistorySchema: BetHistorySchema;
+  /** 같은 라운드에서 동일 선택지로 한도 테스트할 때 */
+  fixedOptionId?: string;
 }): Promise<{ ok: true } | { ok: false; blockedByLimit?: boolean; reason: string; error?: unknown }> {
-  const { supabase, user, bet, optionId, amount, now, betHistoryExists, memoryLedger, betHistorySchema } = params;
+  const { supabase, user, bet, amount, now, betHistoryExists, memoryLedger, betHistorySchema, fixedOptionId } =
+    params;
 
   if (amount <= 0) return { ok: false, reason: "amount <= 0" };
   if (user.balance < amount) return { ok: false, reason: "insufficient_balance" };
 
-  if (amount > MAX_BET_PER_ONCE) {
-    return { ok: false, blockedByLimit: true, reason: `per_once_limit(${MAX_BET_PER_ONCE})` };
+  let existingOnMarket = 0;
+  if (betHistoryExists) {
+    existingOnMarket = await sumUserBetsOnMarketDb(supabase, user.id, bet.id, betHistorySchema);
+  } else {
+    const ledger = memoryLedger.get(user.id) ?? [];
+    for (const r of ledger) {
+      if (r.marketId === bet.id) existingOnMarket += r.amount;
+    }
+  }
+  if (existingOnMarket + amount > MAX_STAKE_PER_MARKET) {
+    return {
+      ok: false,
+      blockedByLimit: true,
+      reason: `per_market_limit(${MAX_STAKE_PER_MARKET};existing=${existingOnMarket})`,
+    };
   }
 
   const dayStart = startOfUtcDay(now).toISOString();
@@ -293,8 +468,17 @@ async function tryPlaceBet(params: {
     return { ok: false, blockedByLimit: true, reason: `per_week_limit(${MAX_BET_PER_WEEK})` };
   }
 
+  const optionId = fixedOptionId ?? randomOptionIdForBet(bet);
+
+  const spent = await adjustPebblesScript(supabase, user.id, -amount);
+  if (!spent.ok) {
+    if (spent.error === "insufficient_pebbles") return { ok: false, reason: "insufficient_pebbles" };
+    return { ok: false, reason: "deduct_failed", error: spent.error };
+  }
+  user.balance = spent.balance;
+
   if (betHistoryExists) {
-    const base: any = {
+    const base: Record<string, unknown> = {
       user_id: user.id,
       amount,
       created_at: now.toISOString(),
@@ -306,63 +490,68 @@ async function tryPlaceBet(params: {
       base[betHistorySchema.marketIdKey] = bet.id;
       base[betHistorySchema.optionKey] = optionId;
     } else {
-      // last resort: try common names
       base.bet_id = bet.id;
       base.choice = optionId;
     }
 
     const { error } = await supabase.from("bet_history").insert(base);
-    if (error) return { ok: false, reason: "db_insert_failed", error };
+    if (error) {
+      const refunded = await adjustPebblesScript(supabase, user.id, amount);
+      if (refunded.ok) user.balance = refunded.balance;
+      return { ok: false, reason: "db_insert_failed", error };
+    }
   } else {
     const ledger = memoryLedger.get(user.id) ?? [];
-    ledger.push({ ts: now.getTime(), amount });
+    ledger.push({ ts: now.getTime(), amount, marketId: bet.id });
     memoryLedger.set(user.id, ledger);
   }
 
-  user.balance -= amount;
   user.openBetCount += 1;
   return { ok: true };
 }
 
 async function tryBankruptcyDraw(params: {
+  supabase: ReturnType<typeof createClient>;
   user: SimUser;
   now: Date;
 }): Promise<{ ok: true; amount: number; via: "fallback" | "api" } | { ok: false; reason: string; error?: unknown }> {
-  const { user } = params;
+  const { supabase, user } = params;
 
-  // Requested: call /api/bankruptcy-draw. If not available locally, fall back to a deterministic “grant”.
   try {
     const res = await fetch("http://localhost:3000/api/bankruptcy-draw", { method: "POST" });
     if (res.ok) {
       const json: any = await res.json().catch(() => ({}));
       const granted = Number(json?.amount ?? json?.granted ?? 0);
       if (Number.isFinite(granted) && granted > 0) {
-        user.balance += granted;
+        const added = await adjustPebblesScript(supabase, user.id, granted);
+        if (added.ok) user.balance = added.balance;
+        else user.balance += granted;
         return { ok: true, amount: granted, via: "api" };
       }
-      // If API exists but doesn't return amount, still consider it executed.
       return { ok: true, amount: 0, via: "api" };
     }
-  } catch (e) {
-    // ignore, use fallback below
+  } catch {
+    /* fallback below */
   }
 
   const fallbackGrant = 10_000;
-  user.balance += fallbackGrant;
+  const added = await adjustPebblesScript(supabase, user.id, fallbackGrant);
+  if (added.ok) user.balance = added.balance;
+  else user.balance += fallbackGrant;
   return { ok: true, amount: fallbackGrant, via: "fallback" };
 }
 
-function settleDay(users: SimUser[]) {
-  // Virtual settlement: assume all open bets settle 1:1 at end-of-day.
-  // For simplicity: each open bet has a 50% chance to win and pays 2x stake (net +stake),
-  // but we don't have per-bet stake tracking in-memory, so we approximate:
-  // - convert openBetCount into random wins and grant a fixed payout per win.
-  // This keeps the “balance changes over time” behavior without touching production DB.
+async function settleDay(supabase: ReturnType<typeof createClient>, users: SimUser[]) {
   const payoutPerWin = 3000;
   for (const u of users) {
     if (u.openBetCount <= 0) continue;
     const wins = randInt(0, u.openBetCount);
-    u.balance += wins * payoutPerWin;
+    const grant = wins * payoutPerWin;
+    if (grant > 0) {
+      const added = await adjustPebblesScript(supabase, u.id, grant);
+      if (added.ok) u.balance = added.balance;
+      else u.balance += grant;
+    }
     u.openBetCount = 0;
   }
 }
@@ -370,21 +559,23 @@ function settleDay(users: SimUser[]) {
 async function cleanup(params: {
   supabase: ReturnType<typeof createClient>;
   users: SimUser[];
+  deleteProfiles: boolean;
 }) {
-  const { supabase, users } = params;
+  const { supabase, users, deleteProfiles } = params;
   const userIds = users.map((u) => u.id);
 
-  // delete bet_history for these users
   const del1 = await supabase.from("bet_history").delete().in("user_id", userIds);
   if (del1.error) console.error(LOG, "cleanup bet_history failed", del1.error);
 
-  // delete sim bets
   const del2 = await supabase.from("bets").delete().like("external_id", "sim:backtest:%");
   if (del2.error) console.error(LOG, "cleanup sim bets failed", del2.error);
 
-  // delete profiles
-  const del3 = await supabase.from("profiles").delete().in("id", userIds);
-  if (del3.error) console.error(LOG, "cleanup profiles failed", del3.error);
+  if (deleteProfiles) {
+    const del3 = await supabase.from("profiles").delete().in("id", userIds);
+    if (del3.error) console.error(LOG, "cleanup profiles failed", del3.error);
+  } else {
+    console.log(LOG, "cleanup: profiles kept (SIM_USER_IDS or SIM_CLEANUP_PROFILES unset)");
+  }
 
   console.log(LOG, "cleanup done");
 }
@@ -401,10 +592,19 @@ async function main() {
   let totalBetCount = 0;
   let totalDrawCount = 0;
   let blockedByLimitCount = 0;
-  const blockedBy = { once: 0, day: 0, week: 0 };
+  const blockedBy = { market: 0, day: 0, week: 0 };
 
   await ensureSimBetsExist(supabase);
-  const users = await createTestProfiles(supabase);
+
+  const fromEnvList = await loadSimUsersFromEnv(supabase);
+  const users = fromEnvList ?? (await createTestProfiles(supabase));
+
+  for (const u of users) {
+    await pushSimUserBalanceToDb(supabase, u);
+  }
+
+  await seedUserCreatedSimMarkets(supabase, users);
+
   const betHistory = await detectBetHistoryTable(supabase);
   const betHistorySchema = betHistory.exists ? await detectBetHistorySchema(supabase) : ({ kind: "unknown" } as const);
   if (betHistory.exists) {
@@ -415,11 +615,14 @@ async function main() {
   } else if (betHistory.error) {
     console.warn(LOG, "bet_history probe returned error (may be RLS/cache). Continuing.", betHistory.error);
   }
-  const memoryLedger = new Map<string, { ts: number; amount: number }[]>();
+  const memoryLedger = new Map<string, MemoryLedgerRow[]>();
+
+  const anchorStart = startOfUtcDay(new Date());
+  anchorStart.setUTCDate(anchorStart.getUTCDate() - (SIM_DAYS - 1));
 
   for (let day = 1; day <= SIM_DAYS; day += 1) {
-    const now = new Date();
-    now.setUTCDate(now.getUTCDate() + (day - 1));
+    const dayBase = new Date(anchorStart.getTime() + (day - 1) * 86400000);
+    const now = new Date(dayBase.getTime() + randInt(3600000, 75600000));
 
     const bets = await loadActiveSimBets(supabase);
     if (bets.length === 0) {
@@ -433,7 +636,7 @@ async function main() {
 
       if (action === "maybe_draw") {
         if (user.balance === 0 && user.openBetCount === 0) {
-          const r = await tryBankruptcyDraw({ user, now });
+          const r = await tryBankruptcyDraw({ supabase, user, now });
           if (r.ok) {
             totalDrawCount += 1;
           } else {
@@ -444,14 +647,13 @@ async function main() {
       }
 
       const bet = pickOne(bets);
-      const options = parseOptions(bet.options);
-      const optionId = options.length > 0 ? pickOne(options) : "승";
+      const optionIdForRound = randomOptionIdForBet(bet);
 
       // Normal random bet amount: 100~10,000 (request)
       const amount = Math.min(randInt(100, 10_000), Math.max(0, user.balance));
       if (amount <= 0) {
         if (user.balance === 0 && user.openBetCount === 0) {
-          const r = await tryBankruptcyDraw({ user, now });
+          const r = await tryBankruptcyDraw({ supabase, user, now });
           if (r.ok) totalDrawCount += 1;
           else errors.push({ day, userId: user.id, kind: "bankruptcy_draw_failed", detail: r });
         }
@@ -462,48 +664,60 @@ async function main() {
         supabase,
         user,
         bet,
-        optionId,
         amount,
         now,
         betHistoryExists: betHistory.exists,
         memoryLedger,
         betHistorySchema,
+        fixedOptionId: optionIdForRound,
       });
       if (placed.ok) {
         totalBetCount += 1;
       } else {
         if (placed.blockedByLimit) {
           blockedByLimitCount += 1;
-          if (String(placed.reason).startsWith("per_once_limit")) blockedBy.once += 1;
+          if (String(placed.reason).startsWith("per_market_limit")) blockedBy.market += 1;
           if (String(placed.reason).startsWith("per_day_limit")) blockedBy.day += 1;
           if (String(placed.reason).startsWith("per_week_limit")) blockedBy.week += 1;
         }
         errors.push({ day, userId: user.id, kind: "place_bet_failed", detail: placed });
       }
 
-      // Force error induction (1): exceed per-once limit
-      const forcedOnceAmount = 10_000;
-      const forcedOnce = await tryPlaceBet({
+      // Force error induction (1): 보트당 누적 5,000 초과 — 먼저 5,000 성공 후 같은 보트에 5,000 재시도
+      const fillMarket = await tryPlaceBet({
         supabase,
         user,
         bet,
-        optionId,
-        amount: forcedOnceAmount,
+        amount: 5_000,
         now,
         betHistoryExists: betHistory.exists,
         memoryLedger,
         betHistorySchema,
+        fixedOptionId: optionIdForRound,
       });
-      if (!forcedOnce.ok && forcedOnce.blockedByLimit) {
+      if (fillMarket.ok) totalBetCount += 1;
+
+      const forcedSecondOnSameMarket = await tryPlaceBet({
+        supabase,
+        user,
+        bet,
+        amount: 5_000,
+        now,
+        betHistoryExists: betHistory.exists,
+        memoryLedger,
+        betHistorySchema,
+        fixedOptionId: optionIdForRound,
+      });
+      if (!forcedSecondOnSameMarket.ok && forcedSecondOnSameMarket.blockedByLimit) {
         blockedByLimitCount += 1;
-        blockedBy.once += 1;
-      } else if (forcedOnce.ok) {
+        blockedBy.market += 1;
+      } else if (forcedSecondOnSameMarket.ok) {
         totalBetCount += 1;
         errors.push({
           day,
           userId: user.id,
-          kind: "forced_once_bet_unexpectedly_ok",
-          detail: { forcedOnceAmount },
+          kind: "forced_market_second_bet_unexpectedly_ok",
+          detail: { note: "same market 5000+5000 should fail" },
         });
       }
 
@@ -522,16 +736,18 @@ async function main() {
       // Only do the "daily cap" forcing for a subset to keep runtime/DB noise low.
       if (Math.random() < 0.25) {
         while (todaySum < 28_000 && user.balance >= 5_000) {
+          const betForTopUp = pickOne(bets);
+          const optTop = randomOptionIdForBet(betForTopUp);
           const topUp = await tryPlaceBet({
             supabase,
             user,
-            bet,
-            optionId,
+            bet: betForTopUp,
             amount: 5_000,
             now,
             betHistoryExists: betHistory.exists,
             memoryLedger,
             betHistorySchema,
+            fixedOptionId: optTop,
           });
           if (!topUp.ok) break;
           totalBetCount += 1;
@@ -545,17 +761,17 @@ async function main() {
           supabase,
           user,
           bet,
-          optionId,
           amount: forcedDayAmount,
           now,
           betHistoryExists: betHistory.exists,
           memoryLedger,
           betHistorySchema,
+          fixedOptionId: optionIdForRound,
         });
         if (!forcedDay.ok && forcedDay.blockedByLimit) {
           blockedByLimitCount += 1;
           if (String(forcedDay.reason).startsWith("per_day_limit")) blockedBy.day += 1;
-          else if (String(forcedDay.reason).startsWith("per_once_limit")) blockedBy.once += 1;
+          else if (String(forcedDay.reason).startsWith("per_market_limit")) blockedBy.market += 1;
           else if (String(forcedDay.reason).startsWith("per_week_limit")) blockedBy.week += 1;
         } else if (forcedDay.ok) {
           totalBetCount += 1;
@@ -571,8 +787,7 @@ async function main() {
       }
     }
 
-    // Virtual settlement at end of each day
-    settleDay(users);
+    await settleDay(supabase, users);
   }
 
   const avgBalance =
@@ -584,7 +799,7 @@ async function main() {
   console.log("총 제비뽑기 횟수:", totalDrawCount);
   console.log("7일 후 유저 평균 잔액:", avgBalance);
   console.log("상한선 로직에 의해 차단된 횟수:", blockedByLimitCount);
-  console.log(" - 1회 상한 차단:", blockedBy.once);
+  console.log(" - 보트(마켓)당 누적 상한 차단:", blockedBy.market);
   console.log(" - 일일 상한 차단:", blockedBy.day);
   console.log(" - 주간 상한 차단:", blockedBy.week);
 
@@ -614,8 +829,23 @@ async function main() {
     console.log("주의: bet_history 테이블이 없어 DB 기반 차단/저장이 아닌 메모리 기반으로 시뮬레이션했습니다.");
   }
 
+  if (betHistory.exists) {
+    const active = await loadActiveSimBets(supabase);
+    console.log("");
+    console.log("==== 마켓별 bet_history 풀 합계 (market_id 또는 bet_id = bets.id) ====");
+    for (const b of active) {
+      const pool = await sumPoolOnMarket(supabase, b.id);
+      console.log(`- ${b.id.slice(0, 8)}… ${b.title?.slice(0, 40)} → pool=${pool} P`);
+    }
+  }
+
+  /** SIM_USER_IDS 로 기존 계정 쓰면 프로필 삭제 기본 false — SIM_CLEANUP_PROFILES=true 일 때만 삭제 */
+  const cleanupProfiles =
+    String(process.env.SIM_CLEANUP_PROFILES || "").toLowerCase() === "true" ||
+    !process.env.SIM_USER_IDS?.trim();
+
   if (String(process.env.SIM_CLEANUP || "").toLowerCase() === "true") {
-    await cleanup({ supabase, users });
+    await cleanup({ supabase, users, deleteProfiles: cleanupProfiles });
   } else {
     console.log("");
     console.log(`${LOG} cleanup skipped (set SIM_CLEANUP=true to delete sim rows)`);

@@ -1,6 +1,6 @@
 import type { CategoryId, FilterId } from "@/components/category-filter";
 
-export type BoardCategoryId = Exclude<CategoryId, "all"> | "suggest";
+export type BoardCategoryId = Exclude<CategoryId, "all">;
 
 export type BoardPost = {
   id: string;
@@ -8,11 +8,13 @@ export type BoardPost = {
   content: string; // plain text (search-friendly)
   contentHtml?: string; // rich text (render)
   category: BoardCategoryId;
+  subCategory?: string; // 세부 카테고리 id (lib/subcategories.ts 참조)
   thumbnail?: string;
   images?: string[]; // data URLs (local-only)
   commentCount: number;
   views?: number;    // 조회수
   author: string;
+  authorId?: string; // Supabase auth user id
   createdAt: string; // ISO
   isHot?: boolean;
 };
@@ -30,6 +32,7 @@ export function loadBoardPosts(): BoardPost[] {
     const migrated = parsed.map((p) => {
       const cat = (p as any).category;
       if (cat === "community") return { ...p, category: "fun" } as BoardPost;
+      if (cat === "suggest") return { ...p, category: "fun" } as BoardPost;
       return p;
     });
     if (migrated.some((p, i) => p !== parsed[i])) saveBoardPosts(migrated);

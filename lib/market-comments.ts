@@ -6,6 +6,8 @@ export type MarketComment = {
   id: string;
   marketId: string;
   author: string;
+  /** Supabase auth user UUID — 서버 저장 실패 시 로컬 폴백에도 기록 */
+  userId?: string;
   content: string;
   createdAt: string; // ISO
 };
@@ -41,14 +43,20 @@ export function getCommentsForMarket(marketId: string): MarketComment[] {
     .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
 }
 
-export function addMarketComment(marketId: string, content: string): MarketComment | null {
+export function addMarketComment(
+  marketId: string,
+  content: string,
+  /** 서버 저장 실패 폴백 시 전달 — stakesByUserId 매핑에 사용 */
+  opts?: { author?: string; userId?: string },
+): MarketComment | null {
   const trimmed = content.trim();
   if (!trimmed) return null;
-  const author = loadAuthUser()?.name?.trim() || "익명";
+  const author = opts?.author?.trim() || loadAuthUser()?.name?.trim() || "익명";
   const next: MarketComment = {
     id: `${Date.now()}`,
     marketId,
     author,
+    userId: opts?.userId,
     content: trimmed,
     createdAt: new Date().toISOString(),
   };

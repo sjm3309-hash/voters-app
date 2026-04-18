@@ -4,6 +4,8 @@ import { createClient } from "@/utils/supabase/client";
 
 export type CustomerCenterCategory = "inquiry" | "proposal";
 
+export type InquiryStatus = "pending" | "answered" | "closed";
+
 export type CustomerCenterPostRow = {
   id: string;
   user_id: string;
@@ -13,6 +15,9 @@ export type CustomerCenterPostRow = {
   is_private: boolean;
   like_count: number;
   author_display_name: string | null;
+  status: InquiryStatus;
+  admin_reply: string | null;
+  admin_replied_at: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -30,6 +35,7 @@ export async function fetchMyInquiries(): Promise<{
     .from("customer_center_posts")
     .select("*")
     .eq("category", "inquiry")
+    .eq("user_id", uid)
     .order("created_at", { ascending: false });
 
   return { data: (data as CustomerCenterPostRow[]) ?? null, error: error ? new Error(error.message) : null };

@@ -198,6 +198,17 @@ export function getLevelUpCost(currentLevel: number): number {
   return (TIER_THRESHOLDS[currentLevel] ?? 0) - (TIER_THRESHOLDS[currentLevel - 1] ?? 0);
 }
 
+/** UI 표시용 레벨 문자열 (예: Lv.1 … Lv.56) */
+export function formatLevelDisplay(level: number): string {
+  const n = Math.floor(Number(level));
+  if (!Number.isFinite(n)) return "Lv.1";
+  const clamped = Math.max(1, Math.min(56, n));
+  return `Lv.${clamped}`;
+}
+
+/** 레벨 텍스트 가독성용 자간 (Tailwind 클래스) */
+export const levelLabelTrackingClassName = "tracking-[0.055em]";
+
 /** 레벨 번호(1-56)로 LevelTier 반환 */
 export function getTierByLevel(level: number): LevelTier {
   const tier = Math.max(0, Math.min(level - 1, 55));
@@ -214,7 +225,7 @@ export function getTierByLevel(level: number): LevelTier {
     colorIndex,
     shape,
     color,
-    label: `${COLOR_KO[color]} ${SHAPE_KO[shape]}`,
+    label: formatLevelDisplay(tier + 1),
     currentThreshold,
     nextThreshold,
     progress: 0,
@@ -284,7 +295,7 @@ export interface LevelTier {
   colorIndex: number;    // 0-7
   shape: ShapeName;
   color: ColorName;
-  label: string;         // 예: "초록 동그라미"
+  label: string;         // 표시용 "Lv.12" (도형·색 이름은 shape/color 필드 참고)
   currentThreshold: number;
   nextThreshold: number | null;
   progress: number;      // 0~1, 다음 레벨까지 진행도
@@ -319,7 +330,7 @@ export function getLevelTier(points: number): LevelTier {
     colorIndex,
     shape,
     color,
-    label: `${COLOR_KO[color]} ${SHAPE_KO[shape]}`,
+    label: formatLevelDisplay(tier + 1),
     currentThreshold,
     nextThreshold,
     progress,

@@ -47,7 +47,7 @@ export function calculateExpectedPayout(betAmount: number, optionPercentage: num
 /**
  * 정산 시 특정 유저의 실제 배당금.
  *
- *   userPayout = (내 당첨 베팅 / 전체 당첨 베팅) × dividendPool
+ *   userPayout = (내 결과 베팅 / 전체 결과 베팅) × dividendPool
  */
 export function calculateUserPayout(
   userBetsOnWinning: number,

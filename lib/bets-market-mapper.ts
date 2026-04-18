@@ -1,7 +1,10 @@
 import type { Market } from "@/components/market-card";
 import { OFFICIAL_BET_AUTHOR_NAME } from "@/lib/admin-sync-bets";
-import { getTeamColor } from "@/lib/team-colors";
+import { fallbackHexByIndex, parseStoredOptionColor } from "@/lib/option-colors";
+import { DEFAULT_BRAND_COLOR, getTeamColor } from "@/lib/team-colors";
 import type { UserMarket } from "@/lib/markets";
+
+type StoredOptionRow = { label: string; storedColor: string | null };
 
 /** Supabase public.bets 행 (피드·상세용 최소 필드) */
 export type BetRowPublic = {
@@ -10,6 +13,8 @@ export type BetRowPublic = {
   closing_at: string;
   confirmed_at?: string | null;
   created_at?: string | null;
+  /** 작성자 profiles.id / auth.users.id */
+  user_id?: string | null;
   /** 동기화 파이프라인에서 설정 (active / waiting / closed 등) */
   status?: string | null;
   category: string | null;
@@ -19,6 +24,8 @@ export type BetRowPublic = {
   options?: unknown;
   is_admin_generated?: boolean | null;
   author_name?: string | null;
+  /** 정산 확정 시 클라이언트 옵션 id */
+  winning_option_id?: string | null;
 };
 
 /** betRowToMarket 결과 — UI·API 응답 확장 필드 포함 */
@@ -34,18 +41,69 @@ export type BetRowMarketView = Omit<Market, "category" | "endsAt"> & {
 };
 
 export function parseVsTitle(title: string): [string, string] {
-  const parts = title.trim().split(/\s+vs\.?\s+/i);
-  if (parts.length >= 2 && parts[0] && parts[1]) {
-    return [parts[0].trim(), parts[1].trim()];
+  const labels = inferLabelsFromTitle(title);
+  return [labels[0] ?? "홈", labels[1] ?? "원정"];
+}
+
+/**
+ * DB `options`가 비었을 때 제목에서 선택지 라벨 추론 (`/` 또는 `vs` 등).
+ * URL 형태 제목은 vs 패턴만 시도합니다.
+ */
+export function inferLabelsFromTitle(title: string): string[] {
+  const t = title.trim();
+  if (!t) return ["선택1", "선택2"];
+  if (/^https?:\/\//i.test(t)) {
+    const parts = t.split(/\s+vs\.?\s+/i).map((s) => s.trim()).filter(Boolean);
+    if (parts.length >= 2) return [parts[0], parts[1]];
+    return ["선택1", "선택2"];
   }
+  const slash = t
+    .split(/\s*\/\s*/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (slash.length >= 2) return slash;
+  const vsParts = t.split(/\s+vs\.?\s+/i).map((s) => s.trim()).filter(Boolean);
+  if (vsParts.length >= 2) return [vsParts[0], vsParts[1]];
   return ["홈", "원정"];
 }
 
-function parseOptionsColumn(raw: unknown): string[] | null {
+function parseStoredOptionsDetailed(raw: unknown): StoredOptionRow[] | null {
   if (raw == null) return null;
   if (!Array.isArray(raw)) return null;
-  const labels = raw.filter((x): x is string => typeof x === "string" && x.trim() !== "");
-  return labels.length > 0 ? labels : null;
+  const out: StoredOptionRow[] = [];
+  for (const x of raw) {
+    if (typeof x === "string") {
+      const s = x.trim();
+      if (s) out.push({ label: s, storedColor: null });
+    } else if (x && typeof x === "object" && "label" in x) {
+      const label = String((x as { label?: unknown }).label ?? "").trim();
+      if (!label) continue;
+      const rawCol = (x as { color?: unknown }).color;
+      const storedColor = parseStoredOptionColor(rawCol);
+      out.push({ label, storedColor });
+    }
+  }
+  return out.length > 0 ? out : null;
+}
+
+function resolveStoredOptionsWithFallback(
+  row: Pick<BetRowPublic, "title" | "options">,
+): StoredOptionRow[] {
+  const parsed = parseStoredOptionsDetailed(row.options);
+  if (parsed && parsed.length >= 2) return parsed;
+  return inferLabelsFromTitle(row.title).map((label) => ({
+    label,
+    storedColor: null,
+  }));
+}
+
+/** DB 행 기준 최종 선택지 라벨 (컬럼 우선, 없거나 부족하면 제목 추론) */
+export function resolveBetOptionLabels(row: Pick<BetRowPublic, "title" | "options">): string[] {
+  return resolveStoredOptionsWithFallback(row).map((r) => r.label);
+}
+
+export function optionIdsForLabels(marketId: string, labels: string[]): string[] {
+  return labels.map((_, i) => `${marketId}-opt-${i}`);
 }
 
 /** 동일 비율 표시용 퍼센트 (합 100) */
@@ -116,16 +174,23 @@ function mapDbSubCategory(sub: string | null): MarketStoredSubCategory | undefin
 }
 
 export function betRowToMarket(row: BetRowPublic): BetRowMarketView {
-  const fromCol = parseOptionsColumn(row.options);
-  const [home, away] = parseVsTitle(row.title);
-  const labels = fromCol && fromCol.length >= 2 ? fromCol : [home, away];
+  const rows = resolveStoredOptionsWithFallback(row);
+  const labels = rows.map((r) => r.label);
+  const [home, away] = [labels[0] ?? "홈", labels[1] ?? "원정"];
   const pcts = equalSplitPercentages(labels.length);
-  const options = labels.map((label, i) => ({
-    id: `${row.id}-opt-${i}`,
-    label,
-    percentage: pcts[i] ?? Math.floor(100 / labels.length),
-    color: getTeamColor(label),
-  }));
+  const options = rows.map((item, i) => {
+    const stored = item.storedColor;
+    const team = getTeamColor(item.label);
+    const color =
+      stored ??
+      (team !== DEFAULT_BRAND_COLOR ? team : fallbackHexByIndex(i));
+    return {
+      id: `${row.id}-opt-${i}`,
+      label: item.label,
+      percentage: pcts[i] ?? Math.floor(100 / labels.length),
+      color,
+    };
+  });
   const cHome = getTeamColor(home);
   const confirmedRaw = row.confirmed_at != null && String(row.confirmed_at).trim() !== "";
   const resultAt = confirmedRaw ? new Date(row.confirmed_at as string) : undefined;
@@ -152,6 +217,7 @@ export function betRowToMarket(row: BetRowPublic): BetRowMarketView {
     officialAuthorName:
       row.author_name?.trim() ||
       (row.is_admin_generated ? OFFICIAL_BET_AUTHOR_NAME : undefined),
+    winningOptionId: row.winning_option_id?.trim() || undefined,
   };
 }
 
