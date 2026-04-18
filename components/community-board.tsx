@@ -13,7 +13,6 @@ import {
   saveBoardPosts,
   type BoardPost,
 } from "@/lib/board";
-import { mockCommunityPosts } from "@/lib/mock-community-posts";
 import { loadAuthUser } from "@/lib/auth";
 import { loadComments, type Comment } from "@/lib/comments";
 import { Button } from "@/components/ui/button";
@@ -272,24 +271,7 @@ export function CommunityBoard({
   useEffect(() => {
     const load = () => {
       const stored = loadBoardPosts();
-      if (stored.length > 0) {
-        setLocalPosts(stored);
-        return;
-      }
-      const seeded: BoardPost[] = mockCommunityPosts.map((p) => ({
-        id: p.id,
-        title: p.title,
-        content: p.content,
-        category: p.category,
-        thumbnail: p.thumbnail,
-        images: p.thumbnail ? [p.thumbnail] : [],
-        commentCount: p.commentCount,
-        author: p.author,
-        createdAt: p.timestamp.toISOString(),
-        isHot: p.isHot,
-      }));
-      setLocalPosts(seeded);
-      saveBoardPosts(seeded);
+      setLocalPosts(stored);
     };
 
     load();
