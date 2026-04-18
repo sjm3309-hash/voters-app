@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { MessageSquare, Vote } from "lucide-react";
 import { useInView } from "react-intersection-observer";
 import { Loader2, Settings2 } from "lucide-react";
 import { Navbar } from "@/components/navbar";
@@ -250,6 +251,15 @@ export function HomeClient() {
   const { userId, points: userBalance } = useUserPointsBalance();
   const [viewMode, setViewMode] = useState<HomeViewMode>("split");
   const [displaySettingsOpen, setDisplaySettingsOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+
+  // 모바일 감지 (md 기준: 768px)
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 768);
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, []);
 
   useEffect(() => {
     const saved = loadHomeViewMode();
@@ -260,6 +270,13 @@ export function HomeClient() {
     setViewMode(m);
     saveHomeViewMode(m);
   }, []);
+
+  // 모바일에서 split 모드면 bets로 강제 전환
+  useEffect(() => {
+    if (isMobile && viewMode === "split") {
+      applyViewMode("bets");
+    }
+  }, [isMobile, viewMode, applyViewMode]);
 
   const [feedMarkets, setFeedMarkets] = useState<Market[]>([]);
   const [feedHasMore, setFeedHasMore] = useState(true);
@@ -578,6 +595,36 @@ export function HomeClient() {
         onSearch={setSearchQuery}
       />
 
+      {/* 모바일 전용 고정 탭 (md 미만에서만 표시) */}
+      <div className="sticky top-14 z-20 flex md:hidden border-b border-border/60 bg-background/95 backdrop-blur-sm">
+        <button
+          type="button"
+          onClick={() => applyViewMode("bets")}
+          className={cn(
+            "flex flex-1 items-center justify-center gap-2 py-3 text-sm font-semibold transition-colors",
+            viewMode !== "board"
+              ? "border-b-2 border-chart-5 text-chart-5"
+              : "text-muted-foreground hover:text-foreground",
+          )}
+        >
+          <Vote className="size-4" />
+          보트
+        </button>
+        <button
+          type="button"
+          onClick={() => applyViewMode("board")}
+          className={cn(
+            "flex flex-1 items-center justify-center gap-2 py-3 text-sm font-semibold transition-colors",
+            viewMode === "board"
+              ? "border-b-2 border-chart-5 text-chart-5"
+              : "text-muted-foreground hover:text-foreground",
+          )}
+        >
+          <MessageSquare className="size-4" />
+          게시판
+        </button>
+      </div>
+
       {/* Unified Filter List + Leaderboard */}
       <div className="px-4 py-4 border-b border-border/50">
         <div className="grid grid-cols-1 xl:grid-cols-[10%_minmax(0,1fr)_10%] items-center gap-4">
@@ -668,9 +715,10 @@ export function HomeClient() {
             <div className="h-full rounded-xl border border-border/40 bg-secondary/10" />
           </aside>
 
-          {/* split 모드: 기존 2컬럼 (베팅 + 게시판) */}
+          {/* split 모드: 데스크탑 2컬럼 / 모바일은 이 분기 자체가 없으므로 방어 렌더 */}
           {viewMode === "split" && (
             <>
+              {/* 데스크탑: 보트 피드 */}
               <section className="min-w-0 xl:col-start-2">
                 <BetFeedListSection
                   markets={filteredMarkets}
@@ -682,8 +730,8 @@ export function HomeClient() {
                   onMarketNavigate={navigateToMarket}
                 />
               </section>
-
-              <aside className="lg:sticky lg:top-[88px] h-[560px] lg:h-[calc(100vh-120px)] xl:col-start-3">
+              {/* 데스크탑: 게시판 사이드 (모바일에서는 hidden) */}
+              <aside className="hidden md:block lg:sticky lg:top-[88px] h-[560px] lg:h-[calc(100vh-120px)] xl:col-start-3">
                 <CommunityBoard
                   activeFilter={feedTab}
                   activeSubTabId={boardActiveSubTabId}
@@ -784,6 +832,8 @@ export function HomeClient() {
             <div className="inline-flex w-full flex-col gap-1 rounded-xl border border-border/60 bg-secondary/30 p-1 shadow-sm sm:flex-row sm:items-stretch">
               {VIEW_MODE_OPTIONS.map(({ mode, short, title }) => {
                 const active = viewMode === mode;
+                // 모바일에서 '나란히(분할)' 버튼 숨김
+                if (mode === "split" && isMobile) return null;
                 return (
                   <button
                     key={mode}
