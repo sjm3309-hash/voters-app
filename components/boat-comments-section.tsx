@@ -180,7 +180,6 @@ function CommentCard({
                 targetType="boat_comment"
                 targetId={commentId}
                 canLike={canReport}
-                className="px-1.5 py-1 text-xs border-0 bg-transparent hover:bg-secondary/60 rounded-md h-auto font-normal"
               />
               <DislikeButton targetType="boat_comment" targetId={commentId} canDislike={canReport} />
               <ReportButton targetType="boat_comment" targetId={commentId} canReport={canReport} />

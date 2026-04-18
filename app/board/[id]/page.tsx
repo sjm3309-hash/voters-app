@@ -596,7 +596,6 @@ export default function BoardPostPage() {
                               targetType="board_comment"
                               targetId={c.id}
                               canLike={canComment}
-                              className="px-1.5 py-1 text-xs border-0 bg-transparent hover:bg-secondary/60 rounded-md h-auto font-normal"
                             />
                           )}
                           {!c.isDeleted && <DislikeButton targetType="board_comment" targetId={c.id} canDislike={canComment} />}
@@ -702,7 +701,6 @@ export default function BoardPostPage() {
                                     targetType="board_comment"
                                     targetId={reply.id}
                                     canLike={canComment}
-                                    className="px-1.5 py-1 text-xs border-0 bg-transparent hover:bg-secondary/60 rounded-md h-auto font-normal"
                                   />
                                 )}
                                 {!reply.isDeleted && <DislikeButton targetType="board_comment" targetId={reply.id} canDislike={canComment} />}
