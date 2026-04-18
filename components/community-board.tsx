@@ -639,10 +639,10 @@ export function CommunityBoard({
               p.set("next", listReturnUrl);
               router.push(`/board/write?${p.toString()}`);
             }}
-            className="hidden sm:inline-flex"
+            className="inline-flex"
           >
             <PenLine className="size-4" />
-            글쓰기
+            <span className="hidden sm:inline">글쓰기</span>
           </Button>
         </div>
       </div>
