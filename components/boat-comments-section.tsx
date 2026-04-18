@@ -180,8 +180,14 @@ function CommentCard({
                 targetType="boat_comment"
                 targetId={commentId}
                 canLike={canReport}
+                className="px-2 py-1 text-xs gap-1 rounded-md"
               />
-              <DislikeButton targetType="boat_comment" targetId={commentId} canDislike={canReport} />
+              <DislikeButton
+                targetType="boat_comment"
+                targetId={commentId}
+                canDislike={canReport}
+                className="px-2 py-1 text-xs gap-1 rounded-md"
+              />
               <ReportButton targetType="boat_comment" targetId={commentId} canReport={canReport} />
               {currentUserId && (userId === currentUserId || isAdminUserId(currentUserId)) && onDelete && (
                 <button
