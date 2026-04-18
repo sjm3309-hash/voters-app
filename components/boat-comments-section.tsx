@@ -14,6 +14,8 @@ import { isUuidString } from "@/lib/is-uuid";
 import { AdminAuthorBadge } from "@/components/admin-author-badge";
 import { ReportButton } from "@/components/report-button";
 import { DislikeButton } from "@/components/dislike-button";
+import { isAdminUserId } from "@/lib/admin";
+import { Trash2 } from "lucide-react";
 
 export type BoatCommentOptionWire = { id: string; label: string; color: string };
 
@@ -23,6 +25,7 @@ type DbComment = {
   author: string;
   content: string;
   createdAt: string;
+  isDeleted?: boolean;
 };
 
 // ──────────────────────────────────────────────────────────────
@@ -88,20 +91,26 @@ function CommentCard({
   commentId,
   createdAt,
   content,
+  isDeleted,
   stake,
   resolveRepColor,
   getOptionLabel,
   canReport,
+  currentUserId,
+  onDelete,
 }: {
   author: string;
   userId?: string | null;
   commentId?: string;
   createdAt: string;
   content: string;
+  isDeleted?: boolean;
   stake: UserStakeSummary | null | undefined;
   resolveRepColor: (optionId: string) => string | undefined;
   getOptionLabel: (optionId: string) => string;
   canReport: boolean;
+  currentUserId?: string | null;
+  onDelete?: (commentId: string) => void;
 }) {
   const prefersDark = useDarkUiFlag();
 
@@ -164,16 +173,30 @@ function CommentCard({
           <span className="text-[11px] text-muted-foreground tabular-nums">
             {new Date(createdAt).toLocaleString("ko-KR")}
           </span>
-          {commentId && (
+          {commentId && !isDeleted && (
             <>
               <DislikeButton targetType="boat_comment" targetId={commentId} canDislike={canReport} />
               <ReportButton targetType="boat_comment" targetId={commentId} canReport={canReport} />
+              {currentUserId && (userId === currentUserId || isAdminUserId(currentUserId)) && onDelete && (
+                <button
+                  type="button"
+                  className="inline-flex items-center rounded-md p-1 text-muted-foreground/60 hover:text-destructive hover:bg-destructive/10 transition-colors"
+                  onClick={() => onDelete(commentId)}
+                  title="댓글 삭제"
+                >
+                  <Trash2 className="size-3.5" />
+                </button>
+              )}
             </>
           )}
         </div>
       </div>
 
-      <div className="mt-2 text-sm text-foreground whitespace-pre-wrap">{content}</div>
+      {isDeleted ? (
+        <div className="mt-2 text-sm text-muted-foreground italic">삭제된 댓글입니다.</div>
+      ) : (
+        <div className="mt-2 text-sm text-foreground whitespace-pre-wrap">{content}</div>
+      )}
     </div>
   );
 }
@@ -349,6 +372,7 @@ export function BoatCommentsSection({
             author_display?: string;
             content?: string;
             created_at?: string;
+            is_deleted?: boolean;
           };
           if (!row.id || !row.user_id || !row.content || !row.created_at) return;
           setDbComments((prev) => {
@@ -359,14 +383,47 @@ export function BoatCommentsSection({
               author: String(row.author_display ?? "익명"),
               content: row.content,
               createdAt: row.created_at,
+              isDeleted: !!row.is_deleted,
             }].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
           });
+        },
+      )
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "boat_comments", filter: `bet_id=eq.${marketId}` },
+        (payload) => {
+          const row = payload.new as { id?: string; is_deleted?: boolean };
+          if (!row.id) return;
+          setDbComments((prev) =>
+            prev.map((c) => c.id === row.id ? { ...c, isDeleted: !!row.is_deleted } : c)
+          );
         },
       )
       .subscribe();
 
     return () => { void supabase.removeChannel(channel); };
   }, [marketId, supabaseMode]);
+
+  // ── delete ────────────────────────────────────────────────
+  const handleDeleteComment = useCallback(async (commentId: string) => {
+    if (!window.confirm("댓글을 삭제하시겠습니까?")) return;
+    try {
+      const res = await fetch(
+        `/api/bets/${encodeURIComponent(marketId)}/comments?commentId=${encodeURIComponent(commentId)}`,
+        { method: "DELETE", credentials: "same-origin" },
+      );
+      const j = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      if (res.ok && j.ok) {
+        setDbComments((prev) =>
+          prev.map((c) => c.id === commentId ? { ...c, isDeleted: true } : c)
+        );
+      } else {
+        window.alert(j.error ?? "댓글 삭제에 실패했습니다.");
+      }
+    } catch {
+      window.alert("네트워크 오류로 댓글을 삭제하지 못했습니다.");
+    }
+  }, [marketId]);
 
   // ── submit ────────────────────────────────────────────────
   const submitDb = async () => {
@@ -493,6 +550,7 @@ export function BoatCommentsSection({
           listForRender.map((c) => {
             const stake = getStakeForComment(c);
             const userId = "userId" in c && typeof c.userId === "string" ? c.userId : undefined;
+            const isDeleted = "isDeleted" in c && !!c.isDeleted;
             return (
               <CommentCard
                 key={c.id}
@@ -501,10 +559,13 @@ export function BoatCommentsSection({
                 commentId={c.id}
                 createdAt={c.createdAt}
                 content={c.content}
+                isDeleted={isDeleted}
                 stake={stake}
                 resolveRepColor={resolveRepColor}
                 getOptionLabel={getOptionLabel}
                 canReport={!!currentUser}
+                currentUserId={currentUser?.id}
+                onDelete={supabaseMode ? handleDeleteComment : undefined}
               />
             );
           })

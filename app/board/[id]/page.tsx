@@ -185,19 +185,26 @@ export default function BoardPostPage() {
       .on(
         "postgres_changes",
         {
-          event: "DELETE",
+          event: "UPDATE",
           schema: "public",
           table: "post_comments",
           filter: `post_id=eq.${id}`,
         },
         (payload) => {
-          const deletedId = String((payload.old as Record<string, unknown>).id);
+          const row = payload.new as Record<string, unknown>;
+          const updatedId = String(row.id);
+          const isDeleted = !!row.is_deleted;
           setComments((prev) =>
-            prev
-              .filter((c) => c.id !== deletedId)
-              .map((c) => ({ ...c, replies: (c.replies ?? []).filter((r) => r.id !== deletedId) }))
+            prev.map((c) => {
+              if (c.id === updatedId) return { ...c, isDeleted };
+              return {
+                ...c,
+                replies: (c.replies ?? []).map((r) =>
+                  r.id === updatedId ? { ...r, isDeleted } : r
+                ),
+              };
+            })
           );
-          setPost((p) => p ? { ...p, commentCount: Math.max(0, p.commentCount - 1) } : p);
         },
       )
       .subscribe();
@@ -324,18 +331,20 @@ export default function BoardPostPage() {
         toast.error("댓글 삭제에 실패했습니다.");
         return;
       }
+      // 소프트 삭제: 내용 대신 삭제됨 표시
+      const markDeleted = (c: import("@/app/api/post-comments/route").PostComment) =>
+        c.id === commentId ? { ...c, isDeleted: true } : c;
       if (parentId) {
         setComments((prev) =>
           prev.map((c) =>
             c.id === parentId
-              ? { ...c, replies: (c.replies ?? []).filter((r) => r.id !== commentId) }
+              ? { ...c, replies: (c.replies ?? []).map(markDeleted) }
               : c
           )
         );
       } else {
-        setComments((prev) => prev.filter((c) => c.id !== commentId));
+        setComments((prev) => prev.map(markDeleted));
       }
-      setPost((p) => p ? { ...p, commentCount: Math.max(0, p.commentCount - 1) } : p);
     } catch {
       toast.error("댓글 삭제 중 오류가 발생했습니다.");
     }
@@ -615,8 +624,8 @@ export default function BoardPostPage() {
                           </div>
                         </div>
                         <div className="flex items-center gap-0.5 shrink-0">
-                          <DislikeButton targetType="board_comment" targetId={c.id} canDislike={canComment} />
-                          {canComment && (
+                          {!c.isDeleted && <DislikeButton targetType="board_comment" targetId={c.id} canDislike={canComment} />}
+                          {canComment && !c.isDeleted && (
                             <button
                               type="button"
                               className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-xs text-muted-foreground/60 hover:text-chart-5 hover:bg-chart-5/10 transition-colors"
@@ -626,8 +635,8 @@ export default function BoardPostPage() {
                               <CornerDownRight className="size-3.5" />
                             </button>
                           )}
-                          <ReportButton targetType="board_comment" targetId={c.id} canReport={canComment} />
-                          {currentUserId && c.authorId === currentUserId && (
+                          {!c.isDeleted && <ReportButton targetType="board_comment" targetId={c.id} canReport={canComment} />}
+                          {!c.isDeleted && currentUserId && (c.authorId === currentUserId || isAdminUserId(currentUserId)) && (
                             <Button
                               variant="ghost"
                               size="sm"
@@ -639,9 +648,13 @@ export default function BoardPostPage() {
                           )}
                         </div>
                       </div>
-                      <div className="mt-2 text-sm whitespace-pre-wrap text-foreground">
-                        {c.content}
-                      </div>
+                      {c.isDeleted ? (
+                        <div className="mt-2 text-sm text-muted-foreground italic">삭제된 댓글입니다.</div>
+                      ) : (
+                        <div className="mt-2 text-sm whitespace-pre-wrap text-foreground">
+                          {c.content}
+                        </div>
+                      )}
 
                       {/* 대댓글 작성 폼 */}
                       {replyingToId === c.id && (
@@ -709,9 +722,9 @@ export default function BoardPostPage() {
                                 </div>
                               </div>
                               <div className="flex items-center gap-0.5 shrink-0">
-                                <DislikeButton targetType="board_comment" targetId={reply.id} canDislike={canComment} />
-                                <ReportButton targetType="board_comment" targetId={reply.id} canReport={canComment} />
-                                {currentUserId && reply.authorId === currentUserId && (
+                                {!reply.isDeleted && <DislikeButton targetType="board_comment" targetId={reply.id} canDislike={canComment} />}
+                                {!reply.isDeleted && <ReportButton targetType="board_comment" targetId={reply.id} canReport={canComment} />}
+                                {!reply.isDeleted && currentUserId && (reply.authorId === currentUserId || isAdminUserId(currentUserId)) && (
                                   <Button
                                     variant="ghost"
                                     size="sm"
@@ -723,9 +736,13 @@ export default function BoardPostPage() {
                                 )}
                               </div>
                             </div>
-                            <div className="mt-2 text-sm whitespace-pre-wrap text-foreground pl-4">
-                              {reply.content}
-                            </div>
+                            {reply.isDeleted ? (
+                              <div className="mt-2 text-sm text-muted-foreground italic pl-4">삭제된 댓글입니다.</div>
+                            ) : (
+                              <div className="mt-2 text-sm whitespace-pre-wrap text-foreground pl-4">
+                                {reply.content}
+                              </div>
+                            )}
                           </div>
                         ))}
                       </div>

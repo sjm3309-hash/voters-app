@@ -7,6 +7,7 @@ import {
   getBetHistoryFlavor,
 } from "@/lib/bet-history-flavor";
 import { aggregateStakesByUserFromHistoryRows, stakeHistorySelectColumns } from "@/lib/boat-comment-stakes";
+import { isAdminEmail } from "@/lib/admin";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -19,6 +20,7 @@ type CommentWire = {
   author: string;
   content: string;
   createdAt: string;
+  isDeleted?: boolean;
 };
 
 export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
@@ -82,7 +84,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
 
     const { data: rows, error: cErr } = await svc
       .from("boat_comments")
-      .select("id, user_id, author_display, content, created_at")
+      .select("id, user_id, author_display, content, created_at, is_deleted")
       .eq("bet_id", trimmed)
       .order("created_at", { ascending: true });
 
@@ -96,6 +98,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
         author_display: string;
         content: string;
         created_at: string;
+        is_deleted?: boolean;
       };
       return {
         id: row.id,
@@ -103,6 +106,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
         author: row.author_display,
         content: row.content,
         createdAt: row.created_at,
+        isDeleted: !!row.is_deleted,
       };
     });
 
@@ -120,6 +124,59 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
       },
       { headers: NO_STORE },
     );
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return NextResponse.json({ ok: false, error: msg }, { status: 500, headers: NO_STORE });
+  }
+}
+
+export async function DELETE(request: Request, context: { params: Promise<{ id: string }> }) {
+  const { id: betId } = await context.params;
+  const trimmed = betId?.trim() ?? "";
+  if (!trimmed || !isUuidString(trimmed)) {
+    return NextResponse.json({ ok: false, error: "invalid_id" }, { status: 400, headers: NO_STORE });
+  }
+
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user?.id) {
+    return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401, headers: NO_STORE });
+  }
+
+  const url = new URL(request.url);
+  const commentId = url.searchParams.get("commentId");
+  if (!commentId) {
+    return NextResponse.json({ ok: false, error: "missing_comment_id" }, { status: 400, headers: NO_STORE });
+  }
+
+  const isAdmin = isAdminEmail(user.email);
+
+  try {
+    let svc: ReturnType<typeof createServiceRoleClient>;
+    try {
+      svc = createServiceRoleClient();
+    } catch (envErr) {
+      const msg = envErr instanceof Error ? envErr.message : String(envErr);
+      return NextResponse.json({ ok: false, error: msg, code: "SERVICE_ROLE_CONFIG" }, { status: 503, headers: NO_STORE });
+    }
+
+    const query = svc
+      .from("boat_comments")
+      .update({ is_deleted: true })
+      .eq("id", commentId)
+      .eq("bet_id", trimmed);
+
+    if (!isAdmin) {
+      query.eq("user_id", user.id);
+    }
+
+    const { error } = await query;
+
+    if (error) {
+      return NextResponse.json({ ok: false, error: error.message }, { status: 500, headers: NO_STORE });
+    }
+
+    return NextResponse.json({ ok: true }, { headers: NO_STORE });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     return NextResponse.json({ ok: false, error: msg }, { status: 500, headers: NO_STORE });

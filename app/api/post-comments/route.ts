@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/utils/supabase/server";
 import { createServiceRoleClient } from "@/utils/supabase/service-role";
 import { checkUserModeration } from "@/lib/moderation-check";
+import { isAdminEmail } from "@/lib/admin";
 
 export type PostComment = {
   id: string;
@@ -11,6 +12,7 @@ export type PostComment = {
   authorDisplay: string;
   content: string;
   createdAt: string;
+  isDeleted?: boolean;
   replies?: PostComment[];   // 클라이언트 전용 — 대댓글 목록
 };
 
@@ -23,6 +25,7 @@ function rowToComment(row: Record<string, unknown>): PostComment {
     authorDisplay: String(row.author_display ?? "익명"),
     content: String(row.content),
     createdAt: typeof row.created_at === "string" ? row.created_at : new Date().toISOString(),
+    isDeleted: !!row.is_deleted,
   };
 }
 
@@ -154,7 +157,7 @@ export async function POST(request: Request) {
   }
 }
 
-// ─── DELETE: 댓글 삭제 (본인만) ──────────────────────────────────────────────
+// ─── DELETE: 댓글 소프트 삭제 (본인 또는 운영자) ────────────────────────────
 export async function DELETE(request: Request) {
   try {
     const auth = await createClient();
@@ -170,12 +173,20 @@ export async function DELETE(request: Request) {
       return NextResponse.json({ ok: false, error: "missing_id" }, { status: 400 });
     }
 
+    const isAdmin = isAdminEmail(user.email);
     const supabase = createServiceRoleClient();
-    const { error } = await supabase
+
+    // 본인 또는 운영자만 삭제 가능
+    const query = supabase
       .from("post_comments")
-      .delete()
-      .eq("id", commentId)
-      .eq("author_id", user.id);
+      .update({ is_deleted: true })
+      .eq("id", commentId);
+
+    if (!isAdmin) {
+      query.eq("author_id", user.id);
+    }
+
+    const { error } = await query;
 
     if (error) {
       console.error("[post-comments DELETE]", error);
