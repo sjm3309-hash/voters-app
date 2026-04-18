@@ -146,7 +146,8 @@ function CommentCard({
       className="rounded-lg border border-border/50 px-4 py-3 transition-colors duration-200"
       style={cardBg ? { backgroundColor: cardBg } : undefined}
     >
-      <div className="flex items-start justify-between gap-3">
+      {/* 작성자 + 시간 */}
+      <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="flex flex-wrap items-baseline gap-x-1.5 gap-y-0">
             <AdminAuthorBadge
@@ -162,52 +163,51 @@ function CommentCard({
               </span>
             )}
           </div>
-
           {betSummary && (
             <div className="mt-0.5 text-[11px] text-muted-foreground truncate">
               {betSummary}
             </div>
           )}
         </div>
-
-        <div className="flex items-center gap-1 shrink-0">
-          <span className="text-[11px] text-muted-foreground tabular-nums">
-            {new Date(createdAt).toLocaleString("ko-KR")}
-          </span>
-          {commentId && !isDeleted && (
-            <>
-              <LikeButton
-                targetType="boat_comment"
-                targetId={commentId}
-                canLike={canReport}
-                className="px-2 py-1 text-xs gap-1 rounded-md"
-              />
-              <DislikeButton
-                targetType="boat_comment"
-                targetId={commentId}
-                canDislike={canReport}
-                className="px-2 py-1 text-xs gap-1 rounded-md"
-              />
-              <ReportButton targetType="boat_comment" targetId={commentId} canReport={canReport} />
-              {currentUserId && (userId === currentUserId || isAdminUserId(currentUserId)) && onDelete && (
-                <button
-                  type="button"
-                  className="inline-flex items-center rounded-md p-1 text-muted-foreground/60 hover:text-destructive hover:bg-destructive/10 transition-colors"
-                  onClick={() => onDelete(commentId)}
-                  title="댓글 삭제"
-                >
-                  <Trash2 className="size-3.5" />
-                </button>
-              )}
-            </>
-          )}
-        </div>
+        <span className="text-[11px] text-muted-foreground tabular-nums shrink-0">
+          {new Date(createdAt).toLocaleString("ko-KR")}
+        </span>
       </div>
 
+      {/* 내용 */}
       {isDeleted ? (
         <div className="mt-2 text-sm text-muted-foreground italic">삭제된 댓글입니다.</div>
       ) : (
         <div className="mt-2 text-sm text-foreground whitespace-pre-wrap">{content}</div>
+      )}
+
+      {/* 액션 버튼 — 내용 아래 */}
+      {commentId && !isDeleted && (
+        <div className="mt-2 flex items-center gap-1 flex-wrap">
+          <LikeButton
+            targetType="boat_comment"
+            targetId={commentId}
+            canLike={canReport}
+            className="px-2 py-1 text-xs gap-1 rounded-md"
+          />
+          <DislikeButton
+            targetType="boat_comment"
+            targetId={commentId}
+            canDislike={canReport}
+            className="px-2 py-1 text-xs gap-1 rounded-md"
+          />
+          <ReportButton targetType="boat_comment" targetId={commentId} canReport={canReport} />
+          {currentUserId && (userId === currentUserId || isAdminUserId(currentUserId)) && onDelete && (
+            <button
+              type="button"
+              className="inline-flex items-center rounded-md p-1 text-muted-foreground/60 hover:text-destructive hover:bg-destructive/10 transition-colors"
+              onClick={() => onDelete(commentId)}
+              title="댓글 삭제"
+            >
+              <Trash2 className="size-3.5" />
+            </button>
+          )}
+        </div>
       )}
     </div>
   );
