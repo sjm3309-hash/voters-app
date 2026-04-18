@@ -51,6 +51,8 @@ export type BetFeedMarketWire = {
   winningOptionId?: string;
   /** DB `confirmed_at` — 결과 확정 시각 */
   confirmedAt?: string;
+  /** DB `status` — settled / refunded / cancelled 등 */
+  status?: string;
 };
 
 export function betRowToFeedWire(
@@ -87,6 +89,7 @@ export function betRowToFeedWire(
       row.confirmed_at && String(row.confirmed_at).trim()
         ? new Date(row.confirmed_at as string).toISOString()
         : undefined,
+    status: row.status ?? undefined,
   };
 }
 

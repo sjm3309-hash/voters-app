@@ -79,6 +79,8 @@ interface MarketDetail {
   winningOptionId?: string;
   /** 결과 확정 시각 (ISO) — DB `confirmed_at` */
   confirmedAt?: string;
+  /** DB status — settled / refunded / cancelled 등 */
+  status?: string;
 }
 
 // Mock market data - would come from API
@@ -293,6 +295,7 @@ function feedWireToMarketDetail(w: BetFeedMarketWire): MarketDetail {
     authorName: w.authorName ?? w.officialAuthorName,
     winningOptionId: w.winningOptionId,
     confirmedAt: w.confirmedAt,
+    status: w.status,
   };
 }
 
@@ -831,6 +834,7 @@ export default function MarketDetailPage() {
     const { adminFee, creatorFee } = calculateFees(realPool);
 
     setSettling(true);
+    let wasNoContest = false;
     try {
       if (isUuidString(marketId)) {
         const res = await fetch(`/api/bets/${marketId}/settle`, {
@@ -844,6 +848,7 @@ export default function MarketDetailPage() {
           error?: string;
           confirmedAt?: string;
           message?: string;
+          noContest?: boolean;
         };
         if (!res.ok || !j?.ok) {
           window.alert(
@@ -854,11 +859,22 @@ export default function MarketDetailPage() {
           return;
         }
         const confirmedAtIso = j.confirmedAt ?? new Date().toISOString();
-        setMarketData((prev) =>
-          prev
-            ? { ...prev, winningOptionId, confirmedAt: confirmedAtIso }
-            : prev,
-        );
+        wasNoContest = !!j.noContest;
+        if (wasNoContest) {
+          // 반대쪽 베팅 없음 — 서버에서 전액 환불 완료
+          setMarketData((prev) =>
+            prev
+              ? { ...prev, winningOptionId, confirmedAt: confirmedAtIso, status: "refunded" }
+              : prev,
+          );
+          void refreshPebblesFromServer(userId);
+        } else {
+          setMarketData((prev) =>
+            prev
+              ? { ...prev, winningOptionId, confirmedAt: confirmedAtIso }
+              : prev,
+          );
+        }
       } else {
         const um = getUserMarketById(marketId);
         const confirmedAtIso = new Date().toISOString();
@@ -879,7 +895,8 @@ export default function MarketDetailPage() {
       }
 
       const isCreator = market.authorId && market.authorId === userId;
-      if (isCreator && creatorFee > 0) {
+      // noContest(전액 환불)일 때는 창작자 수수료 없음
+      if (isCreator && creatorFee > 0 && !wasNoContest) {
         void earnUserPoints(userId, creatorFee, `🏆 보트 창작자 페블 — ${market.question.slice(0, 20)}…`).then(() =>
           refreshPebblesFromServer(userId),
         );
@@ -895,7 +912,8 @@ export default function MarketDetailPage() {
 
   // ─── 배당금 / 정산 계산 (bets 선언 이후) ─────────────────────────────────
   const winningOptionId = market?.winningOptionId;
-  const isSettled = !!winningOptionId;
+  const isRefunded = market?.status === "refunded";
+  const isSettled = !!winningOptionId && !isRefunded;
   const realPool = bets.reduce((acc, b) => acc + b.amount, 0);
 
   const myWinningBets = winningOptionId
@@ -1090,6 +1108,27 @@ export default function MarketDetailPage() {
                 </div>
               </div>
             </div>
+
+                {/* ─── 전액 환불 배너 ─────────────────────────────────────── */}
+                {isRefunded && (
+                  <div className="rounded-xl border border-blue-500/30 bg-blue-500/10 p-4 space-y-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-lg">💸</span>
+                      <span className="font-bold text-foreground">전액 환불 처리 완료</span>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      반대쪽 베팅 참여자가 없어 모든 베팅 금액이 자동으로 전액 환불되었습니다.
+                    </p>
+                    {(() => {
+                      const myTotal = Object.values(myStakeByOption).reduce((a, b) => a + b, 0);
+                      return myTotal > 0 ? (
+                        <p className="text-sm font-semibold text-blue-400">
+                          내 환불 금액: {myTotal.toLocaleString()} P
+                        </p>
+                      ) : null;
+                    })()}
+                  </div>
+                )}
 
                 {/* ─── 정산 완료 배너 ─────────────────────────────────────── */}
                 {isSettled && (() => {

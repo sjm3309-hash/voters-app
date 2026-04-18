@@ -4,6 +4,12 @@ import { createServiceRoleClient } from "@/utils/supabase/service-role";
 import { isAdminEmail } from "@/lib/admin";
 import { isUuidString } from "@/lib/is-uuid";
 import { optionIdsForLabels, resolveBetOptionLabels } from "@/lib/bets-market-mapper";
+import { adjustPebblesAtomic } from "@/lib/pebbles-db";
+import {
+  getBetHistoryFlavor,
+  betHistoryMarketCol,
+  readOptionIdFromRow,
+} from "@/lib/bet-history-flavor";
 
 export const dynamic = "force-dynamic";
 
@@ -107,6 +113,67 @@ export async function POST(
   }
 
   const confirmedAt = new Date().toISOString();
+
+  // ── 반대쪽 베팅 여부 확인 ──────────────────────────────────────────────
+  const flavor = await getBetHistoryFlavor(svc);
+  const marketCol = betHistoryMarketCol(flavor);
+
+  const { data: hist, error: histErr } = await svc
+    .from("bet_history")
+    .select("user_id, amount, choice, option_id")
+    .eq(marketCol, marketId);
+
+  if (histErr) {
+    return NextResponse.json(
+      { ok: false, error: histErr.message, code: histErr.code },
+      { status: 500, headers: NO_STORE },
+    );
+  }
+
+  // 유저별 환불 맵 + 반대 옵션 합계 계산
+  const refundMap = new Map<string, number>();
+  let losingTotal = 0;
+
+  for (const h of (hist ?? []) as Record<string, unknown>[]) {
+    const uid = h.user_id != null ? String(h.user_id).trim() : "";
+    const amt = Math.floor(Number(h.amount ?? 0));
+    if (!uid || uid === "anon" || !Number.isFinite(amt) || amt <= 0) continue;
+    refundMap.set(uid, (refundMap.get(uid) ?? 0) + amt);
+    const oid = readOptionIdFromRow(flavor, h);
+    if (oid && oid !== winningOptionId) losingTotal += amt;
+  }
+
+  // ── 반대쪽 베팅이 없으면 전액 환불 ────────────────────────────────────
+  if (losingTotal === 0 && refundMap.size > 0) {
+    const { error: upErr } = await svc
+      .from("bets")
+      .update({
+        status: "refunded",
+        winning_option_id: winningOptionId,
+        confirmed_at: confirmedAt,
+      })
+      .eq("id", marketId);
+
+    if (upErr) {
+      return NextResponse.json(
+        { ok: false, error: upErr.message, code: upErr.code, details: upErr },
+        { status: 500, headers: NO_STORE },
+      );
+    }
+
+    const refundResults: { userId: string; amount: number; ok: boolean }[] = [];
+    for (const [userId, amount] of refundMap) {
+      const r = await adjustPebblesAtomic(userId, amount);
+      refundResults.push({ userId, amount, ok: r.ok });
+    }
+
+    return NextResponse.json(
+      { ok: true, noContest: true, refundCount: refundMap.size, confirmedAt, winningOptionId },
+      { headers: NO_STORE },
+    );
+  }
+
+  // ── 정상 정산 ──────────────────────────────────────────────────────────
   const { error: upErr } = await svc
     .from("bets")
     .update({
