@@ -252,6 +252,10 @@ export default function ProfilePage() {
       }
       setUserName(trimmed);
       setEditNickMsg({ type: "ok", text: "닉네임이 변경되었습니다." });
+      // 세션 갱신 → auth-button 닉네임 즉시 반영
+      const supabase = createClient();
+      await supabase.auth.refreshSession();
+      window.dispatchEvent(new CustomEvent("voters:nicknameUpdated", { detail: { nickname: trimmed } }));
     } catch {
       setEditNickMsg({ type: "err", text: "네트워크 오류가 발생했습니다." });
     } finally {

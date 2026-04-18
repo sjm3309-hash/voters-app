@@ -39,10 +39,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: false, error: "nickname_taken" }, { status: 409 });
     }
 
-    // profiles 테이블 업데이트
+    // 1. profiles 테이블 업데이트
     await svc.from("profiles").update({ nickname }).eq("id", user.id);
 
-    // auth 메타데이터 업데이트 (admin API 사용)
+    // 2. auth 메타데이터 업데이트 (admin API 사용)
     await svc.auth.admin.updateUserById(user.id, {
       user_metadata: {
         ...((user.user_metadata as Record<string, unknown>) ?? {}),
@@ -51,6 +51,18 @@ export async function POST(request: Request) {
         name: nickname,
       },
     });
+
+    // 3. 과거 콘텐츠의 닉네임 일괄 업데이트 (병렬 처리)
+    await Promise.allSettled([
+      // 생성한 보트 creator 표시명
+      svc.from("bets").update({ author_name: nickname }).eq("user_id", user.id),
+      // 보트 댓글
+      svc.from("boat_comments").update({ author_display: nickname }).eq("user_id", user.id),
+      // 게시판 댓글
+      svc.from("post_comments").update({ author_display: nickname }).eq("author_id", user.id),
+      // 게시글 (author_id 컬럼이 있는 경우)
+      svc.from("board_posts").update({ author_name: nickname }).eq("author_id", user.id),
+    ]);
 
     return NextResponse.json({ ok: true, nickname });
   } catch (e) {

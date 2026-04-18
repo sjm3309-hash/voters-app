@@ -44,9 +44,18 @@ export function AuthButton() {
     };
     window.addEventListener("voters:levelUpdated", onLevelUp);
 
+    // 닉네임 변경 이벤트 — 세션을 다시 읽어 표시명 즉시 갱신
+    const onNicknameUpdated = () => {
+      supabase.auth.getUser().then(({ data: { user: u } }) => {
+        if (u) setUser({ ...u });
+      });
+    };
+    window.addEventListener("voters:nicknameUpdated", onNicknameUpdated);
+
     return () => {
       listener.subscription.unsubscribe();
       window.removeEventListener("voters:levelUpdated", onLevelUp);
+      window.removeEventListener("voters:nicknameUpdated", onNicknameUpdated);
     };
   }, []);
 
