@@ -127,17 +127,33 @@ async function getSessionUserId(): Promise<string | null> {
 }
 
 /** 서버 profiles.pebbles 와 동기화 후 캐시 갱신 */
-export async function refreshPebblesFromServer(userId: string): Promise<number | null> {
+export async function refreshPebblesFromServer(
+  userId: string,
+  retries = 2,
+): Promise<number | null> {
   if (typeof window === "undefined" || !userId || userId === "anon") return null;
-  try {
-    const res = await fetch("/api/pebbles/balance", { credentials: "same-origin" });
-    const j = (await res.json().catch(() => ({}))) as { ok?: boolean; pebbles?: number };
-    if (!res.ok || !j.ok || typeof j.pebbles !== "number") return null;
-    savePoints(userId, j.pebbles);
-    return j.pebbles;
-  } catch {
-    return null;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      if (attempt > 0) {
+        // 재시도 전 대기 (1초, 2초)
+        await new Promise((r) => setTimeout(r, attempt * 1000));
+      }
+      const res = await fetch("/api/pebbles/balance", {
+        credentials: "include", // same-origin 대신 include 로 쿠키 강제 포함
+        cache: "no-store",
+      });
+      const j = (await res.json().catch(() => ({}))) as { ok?: boolean; pebbles?: number };
+      if (res.ok && j.ok && typeof j.pebbles === "number") {
+        savePoints(userId, j.pebbles);
+        return j.pebbles;
+      }
+      // 401이면 재시도 없이 바로 종료
+      if (res.status === 401) return null;
+    } catch {
+      if (attempt === retries) return null;
+    }
   }
+  return null;
 }
 
 export function setUserPoints(userId: string, nextPoints: number): void {
