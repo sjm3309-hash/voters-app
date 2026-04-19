@@ -128,20 +128,24 @@ export async function POST(request: Request) {
 
     const balanceAfter = result?.remaining_balance ?? null;
 
-    // ── 8. pebble_transactions 기록 (fire-and-forget) ────────
-    void svc.from("pebble_transactions").insert({
+    // ── 8. pebble_transactions 기록 ────────────────────────────
+    const txInsert = await svc.from("pebble_transactions").insert({
       user_id: user.id,
       amount: -normalized.total,
-      balance_after: balanceAfter ?? 0,
+      balance_after: typeof balanceAfter === "number" ? balanceAfter : 0,
       type: "bet_place",
       description: `🎯 보트 참여 — ${normalized.total.toLocaleString()}P`,
     });
+    if (txInsert.error) {
+      console.error("[place-bet] pebble_transactions insert error:", txInsert.error.message, txInsert.error.code);
+    }
 
     return NextResponse.json({
       ok: true,
       remainingBalance: balanceAfter,
       optionTotals: result?.option_totals ?? {},
       myOptionTotals: result?.my_option_totals ?? {},
+      _txOk: !txInsert.error,
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
