@@ -314,7 +314,10 @@ export function HomeClient() {
         });
         const res = await fetch(`/api/bets-feed?${params.toString()}`, {
           credentials: "same-origin",
-          cache: "no-store",
+          // API가 s-maxage=30 / stale-while-revalidate=60을 이미 설정하므로
+          // "default"로 두면 브라우저·CDN이 캐시를 활용합니다.
+          // (실시간성이 필요한 "feedBetsMaybeStale" 이벤트는 별도 경로로 처리)
+          cache: "default",
         });
         const j = (await res.json().catch(() => ({}))) as {
           ok?: boolean;

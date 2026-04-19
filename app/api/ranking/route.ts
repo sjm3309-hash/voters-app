@@ -4,8 +4,9 @@ import { TIER_THRESHOLDS } from "@/lib/level-system";
 import { isAdminUserId } from "@/lib/admin";
 
 export const dynamic = "force-dynamic";
-export const revalidate = 0;
 
+/** 순위는 1분 동안 CDN/브라우저 캐시, 이후 5분 stale-while-revalidate */
+const CACHE_HEADERS = { "Cache-Control": "public, s-maxage=60, stale-while-revalidate=300" };
 const NO_STORE = { "Cache-Control": "no-store, max-age=0" };
 
 export interface RankingEntry {
@@ -116,7 +117,8 @@ export async function GET(request: Request) {
 
     return NextResponse.json(
       { ok: true, rankings: pageEntries, total, page, limit, hasMore: offset + pageEntries.length < total, myRank },
-      { headers: NO_STORE },
+      // myUserId 파라미터가 있으면 개인화 데이터 포함 → 캐시 금지
+      { headers: myUserIdParam ? NO_STORE : CACHE_HEADERS },
     );
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);

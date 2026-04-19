@@ -141,13 +141,13 @@ export async function GET(request: Request) {
     );
 
     const ids = rawRows.map((r) => r.id).filter(Boolean);
-    const [poolBy, stakesByMarket] =
+
+    // poolBy: 스마트 정렬에 전체 풀이 필요하므로 모든 ID로 조회
+    // stakesByMarket: 선택지 비율 표시용 — 현재 페이지 ID만 조회해 DB 부하 감소
+    const poolBy =
       ids.length > 0
-        ? await Promise.all([
-            sumPoolsByMarketIds(supabase, ids),
-            sumOptionStakesByMarketIds(supabase, ids),
-          ])
-        : [new Map<string, number>(), new Map<string, Record<string, number>>()];
+        ? await sumPoolsByMarketIds(supabase, ids)
+        : new Map<string, number>();
 
     const sortMode: SmartSortMode =
       sort === "created_desc"
@@ -160,8 +160,13 @@ export async function GET(request: Request) {
     const pageRows = sortedFull.slice(offset, offset + limit);
     const hasMore = offset + pageRows.length < totalSorted;
 
-    // 페이지에 포함된 보트들의 댓글 수 한 번에 집계
+    // 페이지에 포함된 보트들의 댓글 수 + 선택지 베팅 비율은 pageIds로만 조회
     const pageIds = pageRows.map((r) => r.id).filter(Boolean);
+
+    const stakesByMarket =
+      pageIds.length > 0
+        ? await sumOptionStakesByMarketIds(supabase, pageIds)
+        : new Map<string, Record<string, number>>();
     const commentCountById = new Map<string, number>();
     if (pageIds.length > 0) {
       const cResult = await supabase
@@ -169,21 +174,9 @@ export async function GET(request: Request) {
         .select("bet_id")
         .in("bet_id", pageIds)
         .eq("is_deleted", false);
-      const cRows = cResult.error ? null : cResult.data;
-      if (cRows) {
-        for (const r of cRows as { bet_id: string }[]) {
+      if (!cResult.error && cResult.data) {
+        for (const r of cResult.data as { bet_id: string }[]) {
           commentCountById.set(r.bet_id, (commentCountById.get(r.bet_id) ?? 0) + 1);
-        }
-      } else {
-        // is_deleted 컬럼 없는 경우 fallback (마이그레이션 전 DB)
-        const cFallback = await supabase
-          .from("boat_comments")
-          .select("bet_id")
-          .in("bet_id", pageIds);
-        if (!cFallback.error && cFallback.data) {
-          for (const r of cFallback.data as { bet_id: string }[]) {
-            commentCountById.set(r.bet_id, (commentCountById.get(r.bet_id) ?? 0) + 1);
-          }
         }
       }
     }

@@ -39,7 +39,7 @@ export function UserLeaderboard({ className }: { className?: string }) {
     let cancelled = false;
     const load = async () => {
       try {
-        const res = await fetch("/api/ranking?page=1&limit=10", { cache: "no-store" });
+        const res = await fetch("/api/ranking?page=1&limit=10");
         const json = (await res.json()) as { ok: boolean; rankings?: RankingEntry[] };
         if (!cancelled && json.ok) setEntries(json.rankings ?? []);
       } catch { /* 무시 */ }
