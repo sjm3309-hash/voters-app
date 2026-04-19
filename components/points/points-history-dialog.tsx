@@ -93,7 +93,7 @@ function txLabel(type: string, description: string): string {
     case "daily_reward": return "일일 출석 보상";
     case "bet_win":      return "보트 당첨 수령";
     case "bet_place":    return "보트 참여";
-    case "level_up":     return "레벨업";
+    case "level_up":     return "레벨 업하기";
     case "creator_fee":  return "창작자 수수료";
     case "admin_grant":  return "운영자 지급";
     case "admin_deduct": return "운영자 차감";
@@ -101,7 +101,7 @@ function txLabel(type: string, description: string): string {
     case "bet_refund":   return "보트 참여 환불";
     case "creator_refund": return "보트 노콘테스트 환불";
     case "reward":       return "페블 획득";
-    case "spend":        return "페블 사용";
+    case "spend":        return "보트 만들기 비용";
     default:             return type || "페블 변동";
   }
 }

@@ -129,15 +129,13 @@ export async function POST(request: Request) {
     const balanceAfter = result?.remaining_balance ?? null;
 
     // ── 8. pebble_transactions 기록 (fire-and-forget) ────────
-    if (typeof balanceAfter === "number") {
-      void svc.from("pebble_transactions").insert({
-        user_id: user.id,
-        amount: -normalized.total,
-        balance_after: balanceAfter,
-        type: "bet_place",
-        description: `🎯 보트 참여 — ${normalized.total.toLocaleString()}P`,
-      });
-    }
+    void svc.from("pebble_transactions").insert({
+      user_id: user.id,
+      amount: -normalized.total,
+      balance_after: balanceAfter,
+      type: "bet_place",
+      description: `🎯 보트 참여 — ${normalized.total.toLocaleString()}P`,
+    });
 
     return NextResponse.json({
       ok: true,
