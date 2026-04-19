@@ -146,8 +146,6 @@ export async function POST(request: Request) {
       remainingBalance: balanceAfter,
       optionTotals: result?.option_totals ?? {},
       myOptionTotals: result?.my_option_totals ?? {},
-      _txOk: !txInsert.error,
-      _txError: txInsert.error ? `${txInsert.error.code}: ${txInsert.error.message}` : null,
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
