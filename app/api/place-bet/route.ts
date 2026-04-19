@@ -129,13 +129,14 @@ export async function POST(request: Request) {
     const balanceAfter = result?.remaining_balance ?? null;
 
     // ── 8. pebble_transactions 기록 ────────────────────────────
-    const txInsert = await svc.from("pebble_transactions").insert({
+    const txRow: Record<string, unknown> = {
       user_id: user.id,
       amount: -normalized.total,
-      balance_after: typeof balanceAfter === "number" ? balanceAfter : 0,
       type: "bet_place",
       description: `🎯 보트 참여 — ${normalized.total.toLocaleString()}P`,
-    });
+    };
+    if (typeof balanceAfter === "number") txRow.balance_after = balanceAfter;
+    const txInsert = await svc.from("pebble_transactions").insert(txRow);
     if (txInsert.error) {
       console.error("[place-bet] pebble_transactions insert error:", txInsert.error.message, txInsert.error.code);
     }
