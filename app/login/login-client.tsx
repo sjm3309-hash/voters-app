@@ -25,9 +25,10 @@ export function LoginClient() {
   const [loginLoading, setLoginLoading] = useState(false);
   const [socialLoading, setSocialLoading] = useState<"google" | "kakao" | null>(null);
   const isOAuthError = Boolean(searchParams.get("error"));
+  const oAuthErrorDetail = searchParams.get("error") ?? "";
   const [showError, setShowError] = useState(isOAuthError);
   const [errorMessage, setErrorMessage] = useState(
-    isOAuthError ? OAUTH_ERROR_MESSAGE : LOGIN_ERROR_MESSAGE,
+    isOAuthError ? `소셜 로그인 실패: ${oAuthErrorDetail}` : LOGIN_ERROR_MESSAGE,
   );
 
   useEffect(() => {
