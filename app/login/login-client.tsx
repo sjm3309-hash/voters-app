@@ -54,7 +54,10 @@ export function LoginClient() {
     setSocialLoading(provider);
     const { error } = await supabase.auth.signInWithOAuth({
       provider,
-      options: { redirectTo: `${location.origin}/auth/callback` },
+      options: {
+        redirectTo: `${location.origin}/auth/callback`,
+        ...(provider === "kakao" && { scopes: "profile_nickname" }),
+      },
     });
     if (error) { setShowError(true); setSocialLoading(null); }
   }
