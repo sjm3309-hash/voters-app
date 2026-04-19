@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/select";
 import { type BoardCategoryId } from "@/lib/board";
 import { safeReturnPath } from "@/lib/board-navigation";
+import { boardImageFileToDataUrl, BOARD_IMAGE_MAX_PICK_MB } from "@/lib/board-image-data-url";
 import { checkAndGrantFirstPost } from "@/lib/daily-rewards";
 import { useUserPointsBalance } from "@/lib/points";
 import { getSubCategories, hasSubCategories, defaultSubCategory } from "@/lib/subcategories";
@@ -241,7 +242,9 @@ export function BoardWriteClient() {
                   </div>
 
                   <div className="space-y-2">
-                    <Label>이미지 첨부 (최대 3장, 장당 1MB)</Label>
+                    <Label>
+                      이미지 첨부 (최대 3장, 원본 장당 최대 {BOARD_IMAGE_MAX_PICK_MB}MB · 큰 사진은 자동 압축)
+                    </Label>
                     <Input
                       type="file"
                       accept="image/*"
@@ -252,20 +255,16 @@ export function BoardWriteClient() {
                         if (files.length === 0) return;
 
                         const picked = files.slice(0, 3);
-                        const readers = picked.map(
-                          (file) =>
-                            new Promise<string | null>((resolve) => {
-                              if (file.size > 1024 * 1024) return resolve(null);
-                              const r = new FileReader();
-                              r.onload = () => resolve(typeof r.result === "string" ? r.result : null);
-                              r.onerror = () => resolve(null);
-                              r.readAsDataURL(file);
-                            })
-                        );
-                        const results = (await Promise.all(readers)).filter(Boolean) as string[];
+                        const results: string[] = [];
+                        for (const file of picked) {
+                          const url = await boardImageFileToDataUrl(file);
+                          if (url) results.push(url);
+                        }
                         const rejected = picked.length - results.length;
                         if (rejected > 0) {
-                          setImageError(`이미지 ${rejected}개가 용량 제한(1MB)으로 제외되었습니다.`);
+                          setImageError(
+                            `이미지 ${rejected}개를 첨부하지 못했습니다. (원본 장당 최대 ${BOARD_IMAGE_MAX_PICK_MB}MB, JPG/PNG 등)`,
+                          );
                         }
                         setImages((prev) => [...prev, ...results].slice(0, 3));
                         e.currentTarget.value = "";
