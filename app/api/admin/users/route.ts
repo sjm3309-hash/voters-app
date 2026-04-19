@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAdminJson } from "@/app/api/admin/_auth";
-import { isAdminEmail } from "@/lib/admin";
+import { isAdminEmail, isAdminUserId } from "@/lib/admin";
 import { ADMIN_BALANCE } from "@/lib/points-constants";
 import { createServiceRoleClient } from "@/utils/supabase/service-role";
 import type { AdminUsersApiRow } from "@/lib/admin-users-api-types";
@@ -68,7 +68,7 @@ async function mapAuthUsersToRows(
   return authUsers.map((u) => {
     const prof = profileById.get(u.id);
     const profileMissing = !prof;
-    const adminEmail = isAdminEmail(u.email);
+    const adminEmail = isAdminEmail(u.email) || isAdminUserId(u.id);
 
     let pebbles: number;
     if (adminEmail) {
