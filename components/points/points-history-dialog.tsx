@@ -61,7 +61,7 @@ function txIcon(type: string, description = "") {
     return <Trophy className="size-3.5 text-amber-400" />;
   if (desc.includes("파산") || desc.includes("bankruptcy"))
     return <Zap className="size-3.5 text-yellow-400" />;
-  if (desc.includes("보트 참여") || desc.includes("베팅"))
+  if (desc.includes("보트 참여") || desc.includes("참여") || desc.includes("베팅"))
     return <Target className="size-3.5 text-orange-400" />;
   if (desc.includes("레벨"))
     return <TrendingUp className="size-3.5 text-chart-5" />;

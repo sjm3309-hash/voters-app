@@ -251,7 +251,7 @@ export function HomeClient() {
   const { userId, points: userBalance } = useUserPointsBalance();
   const [viewMode, setViewMode] = useState<HomeViewMode>("split");
   const [displaySettingsOpen, setDisplaySettingsOpen] = useState(false);
-  const [myBoatsOpen, setMyBoatsOpen] = useState(false);
+  const myBoatsOpen = searchParams.get("dialog") === "myboats";
   const [isMobile, setIsMobile] = useState(false);
 
   // 모바일 감지 (md 기준: 768px)
@@ -694,7 +694,11 @@ export function HomeClient() {
                 variant="outline"
                 size="sm"
                 className="h-9 shrink-0 gap-1.5 border-border/60 text-xs sm:text-sm"
-                onClick={() => setMyBoatsOpen(true)}
+                onClick={() => {
+                  const sp = new URLSearchParams(searchParams.toString());
+                  sp.set("dialog", "myboats");
+                  router.push(pathname + "?" + sp.toString());
+                }}
               >
                 <Vote className="size-3.5" aria-hidden />
                 My 보트
@@ -880,7 +884,14 @@ export function HomeClient() {
 
       <MyBoatsDialog
         open={myBoatsOpen}
-        onOpenChange={setMyBoatsOpen}
+        onOpenChange={(v) => {
+          if (!v) {
+            const sp = new URLSearchParams(searchParams.toString());
+            sp.delete("dialog");
+            const q = sp.toString();
+            router.replace(pathname + (q ? "?" + q : ""));
+          }
+        }}
         userId={userId}
       />
     </div>

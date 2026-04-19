@@ -23,12 +23,23 @@ function pad2(n: number): string {
   return String(Math.max(0, n)).padStart(2, "0");
 }
 
-function formatRemainingHMS(totalSeconds: number): string {
+function formatRemaining(totalSeconds: number): string {
   const s = Math.max(0, Math.floor(totalSeconds));
-  const hours = Math.floor(s / 3600);
+  const days = Math.floor(s / 86400);
+  const hours = Math.floor((s % 86400) / 3600);
   const mins = Math.floor((s % 3600) / 60);
   const secs = s % 60;
-  return `${pad2(hours)}:${pad2(mins)}:${pad2(secs)}`;
+
+  if (days >= 1) {
+    // 1일 이상: "N일 M시간 MM분 SS초"
+    return `${days}일 ${hours}시간 ${pad2(mins)}분 ${pad2(secs)}초`;
+  }
+  if (hours >= 1) {
+    // 1시간 이상: "N시간 MM분 SS초"
+    return `${hours}시간 ${pad2(mins)}분 ${pad2(secs)}초`;
+  }
+  // 1시간 미만: "MM분 SS초"
+  return `${pad2(mins)}분 ${pad2(secs)}초`;
 }
 
 type Phase = "beforeClose" | "beforeConfirm" | "done";
@@ -95,9 +106,9 @@ export function CountdownTimer({ closingAt, confirmedAt, className }: CountdownT
   const isCritical = phase === "beforeClose" && closeDiffSec > 0 && closeDiffSec <= CRITICAL_SECONDS;
   const timeText =
     phase === "beforeClose"
-      ? `⌛ 참여 마감까지: ${formatRemainingHMS(closeDiffSec)}`
+      ? `⌛ 참여 마감까지: ${formatRemaining(closeDiffSec)}`
       : phase === "beforeConfirm"
-        ? `🔍 결과 확정까지: ${formatRemainingHMS(confirmDiffSec)}`
+        ? `🔍 결과 확정까지: ${formatRemaining(confirmDiffSec)}`
         : "✅ 결과 확정 완료";
 
   return (

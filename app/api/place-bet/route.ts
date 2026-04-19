@@ -49,7 +49,7 @@ export async function POST(request: Request) {
 
     if (!marketId || normalized.error === "bets_required") {
       return NextResponse.json(
-        { ok: false, error: "invalid_request", message: "베팅 정보가 없습니다." },
+        { ok: false, error: "invalid_request", message: "참여 정보가 없습니다." },
         { status: 400 },
       );
     }
@@ -88,7 +88,7 @@ export async function POST(request: Request) {
 
     if (creatorCheck && (creatorCheck as { user_id?: string }).user_id === user.id) {
       return NextResponse.json(
-        { ok: false, error: "creator_cannot_bet", message: "보트 창작자는 자신의 보트에 베팅할 수 없습니다." },
+        { ok: false, error: "creator_cannot_bet", message: "보트 창작자는 자신의 보트에 참여할 수 없습니다." },
         { status: 403 },
       );
     }
@@ -105,7 +105,7 @@ export async function POST(request: Request) {
 
     if (rpcError) {
       // PostgreSQL RAISE EXCEPTION 메시지를 그대로 클라이언트에 전달
-      const msg = rpcError.message ?? "베팅 처리 중 오류가 발생했습니다.";
+      const msg = rpcError.message ?? "참여 처리 중 오류가 발생했습니다.";
       const isClientError =
         msg.includes("insufficient") ||
         msg.includes("limit") ||

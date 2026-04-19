@@ -81,7 +81,7 @@ export async function POST(
     if (action === "deduct") {
       const amount = Math.floor(Number(body?.amount ?? 0));
       if (!Number.isFinite(amount) || amount <= 0) {
-        return NextResponse.json({ ok: false, error: "유효한 차감 금액을 입력하세요." }, { status: 400 });
+        return NextResponse.json({ ok: false, error: "유효한 차감 페블 수를 입력하세요." }, { status: 400 });
       }
       const r = await adjustPebblesAtomic(id, -amount);
       if (!r.ok) {
@@ -100,7 +100,7 @@ export async function POST(
       // 알림
       await svc2.from("notifications").insert({
         user_id: id,
-        message: `⚠️ 운영자에 의해 페블이 차감되었습니다\n금액: ${amount.toLocaleString()} P\n사유: ${reason2}`,
+        message: `⚠️ 운영자에 의해 페블이 차감되었습니다\n페블: ${amount.toLocaleString()} P\n사유: ${reason2}`,
         link: null,
         is_read: false,
       });

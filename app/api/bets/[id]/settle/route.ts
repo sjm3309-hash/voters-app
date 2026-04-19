@@ -93,7 +93,7 @@ export async function POST(
         {
           ok: false,
           error: "too_early",
-          message: `베팅 마감 시간(${new Date(r.closing_at).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })} KST) 이후에 결과를 입력할 수 있습니다.`,
+          message: `참여 마감 시간(${new Date(r.closing_at).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })} KST) 이후에 결과를 입력할 수 있습니다.`,
         },
         { status: 403, headers: NO_STORE },
       );

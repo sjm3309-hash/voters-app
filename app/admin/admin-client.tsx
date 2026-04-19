@@ -86,7 +86,7 @@ export function AdminClient() {
   const handleGrantAll = async () => {
     const n = parseInt(grantAmount, 10);
     if (!n || n <= 0) {
-      setGrantError("유효한 금액을 입력하세요 (1 이상의 정수)");
+      setGrantError("유효한 페블 수를 입력하세요 (1 이상의 정수)");
       return;
     }
     if (!window.confirm(
@@ -308,13 +308,13 @@ export function AdminClient() {
             <h2 className="text-sm font-bold text-foreground">전체 유저 페블 일괄 지급</h2>
           </div>
           <p className="text-xs text-muted-foreground">
-            운영자 계정을 제외한 모든 유저에게 동일한 금액의 페블을 지급합니다.
+            운영자 계정을 제외한 모든 유저에게 동일한 페블을 지급합니다.
             지급 후 각 유저에게 알림이 발송되고 페블 내역에 기록됩니다.
           </p>
 
           <div className="flex flex-col sm:flex-row gap-2 items-start sm:items-end">
             <div className="space-y-1 w-full sm:w-36">
-              <label className="text-xs text-muted-foreground font-medium">지급 금액 (P)</label>
+              <label className="text-xs text-muted-foreground font-medium">지급 페블 (P)</label>
               <Input
                 type="number"
                 min={1}

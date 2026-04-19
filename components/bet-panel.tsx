@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { AlertTriangle, CheckCircle2, Info, Loader2, Minus, Plus, RotateCcw, TrendingUp, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Loader2, Minus, Plus, RotateCcw, TrendingUp, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -149,34 +149,9 @@ function BetConfirmDialog({ option, accent, amount, marketQuestion, onConfirm, o
             </div>
           </div>
 
-          <div className="rounded-xl border border-border/30 bg-secondary/20 px-3 py-2.5 space-y-1.5">
-            <div className="flex items-center gap-1 mb-1">
-              <Info className="size-3 text-muted-foreground" />
-              <p className="text-xs text-muted-foreground font-medium">페블 배분 구조</p>
-            </div>
-            <div className="grid grid-cols-3 gap-1 text-center">
-              <div className="rounded-lg bg-secondary/40 px-2 py-1.5">
-                <p className="text-xs text-muted-foreground">운영자</p>
-                <p className="text-xs font-bold text-foreground">{(ADMIN_FEE_RATE * 100).toFixed(0)}%</p>
-              </div>
-              <div className="rounded-lg bg-secondary/40 px-2 py-1.5">
-                <p className="text-xs text-muted-foreground">창작자</p>
-                <p className="text-xs font-bold text-foreground">{(CREATOR_FEE_RATE * 100).toFixed(0)}%</p>
-              </div>
-              <div
-                className="rounded-lg px-2 py-1.5 transition-colors duration-200"
-                style={{ backgroundColor: accentMutedBackground(accent) }}
-              >
-                <p className="text-xs text-muted-foreground">보상 풀</p>
-                <p className="text-xs font-bold transition-colors duration-200" style={{ color: accent }}>
-                  {(DIVIDEND_RATE * 100).toFixed(0)}%
-                </p>
-              </div>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              * 실제 보상은 최종 참여 분포에 따라 달라질 수 있습니다
-            </p>
-          </div>
+          <p className="text-xs text-muted-foreground px-1">
+            * 실제 보상은 최종 참여 분포에 따라 달라질 수 있습니다
+          </p>
 
           <div className="flex gap-2 pt-1">
             <button
@@ -325,7 +300,7 @@ export function BetPanel({
               className="shrink-0 border-border/50 hover:bg-secondary hover:border-neon-blue/30"
             >
               <Minus className="size-4" />
-              <span className="sr-only">금액 줄이기</span>
+              <span className="sr-only">페블 줄이기</span>
             </Button>
             <div className="relative flex-1">
               <Input
@@ -346,7 +321,7 @@ export function BetPanel({
               className="shrink-0 border-border/50 hover:bg-secondary hover:border-neon-blue/30"
             >
               <Plus className="size-4" />
-              <span className="sr-only">금액 늘리기</span>
+              <span className="sr-only">페블 늘리기</span>
             </Button>
             <Button
               variant="outline"
@@ -364,7 +339,7 @@ export function BetPanel({
             {remainingMarketCap.toLocaleString()} P)
           </p>
           <p className="text-xs text-muted-foreground mt-1">
-            다른 선택지에 나누어 걸려면, 확정 후 금액을 바꿔 같은 방식으로 다시 보트를 누르세요.
+            다른 선택지에 나누어 걸려면, 확정 후 페블을 바꿔 같은 방식으로 다시 보트를 누르세요.
           </p>
         </div>
 

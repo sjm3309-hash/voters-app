@@ -1223,13 +1223,13 @@ export default function MarketDetailPage() {
                       <span className="font-bold text-foreground">전액 환불 처리 완료</span>
                     </div>
                     <p className="text-sm text-muted-foreground">
-                      반대쪽 베팅 참여자가 없어 모든 베팅 금액이 자동으로 전액 환불되었습니다.
+                      반대쪽 참여자가 없어 모든 참여 페블이 자동으로 전액 환불되었습니다.
                     </p>
                     {(() => {
                       const myTotal = Object.values(myStakeByOption).reduce((a, b) => a + b, 0);
                       return myTotal > 0 ? (
                         <p className="text-sm font-semibold text-blue-400">
-                          내 환불 금액: {myTotal.toLocaleString()} P
+                          내 환불 페블: {myTotal.toLocaleString()} P
                         </p>
                       ) : null;
                     })()}
@@ -1600,7 +1600,7 @@ export default function MarketDetailPage() {
                           <div key={optId} className="rounded-lg bg-card border border-border/40 px-3 py-2">
                             <div className="flex items-center justify-between gap-2">
                               <span className="text-xs font-semibold truncate" style={{ color: fillColor }}>{label}</span>
-                              <span className="text-xs tabular-nums text-muted-foreground shrink-0">{myAmt.toLocaleString()} P 베팅</span>
+                              <span className="text-xs tabular-nums text-muted-foreground shrink-0">{myAmt.toLocaleString()} P 참여</span>
                             </div>
                             {expected > 0 && (
                               <div className="mt-1 flex items-center gap-1">
@@ -1678,7 +1678,7 @@ export default function MarketDetailPage() {
                           <div key={optId} className="rounded-lg bg-card border border-border/40 px-3 py-2">
                             <div className="flex items-center justify-between gap-2">
                               <span className="text-xs font-semibold truncate" style={{ color: fillColor }}>{label}</span>
-                              <span className="text-xs tabular-nums text-muted-foreground shrink-0">{myAmt.toLocaleString()} P 베팅</span>
+                              <span className="text-xs tabular-nums text-muted-foreground shrink-0">{myAmt.toLocaleString()} P 참여</span>
                             </div>
                             {expected > 0 && (
                               <div className="mt-1 flex items-center gap-1">

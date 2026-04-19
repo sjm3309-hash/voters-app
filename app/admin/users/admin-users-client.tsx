@@ -75,7 +75,7 @@ function DbUserRow({
   const handleGrant = async () => {
     const n = parseInt(amount, 10);
     if (!n || n <= 0) {
-      setMsg({ ok: false, text: "올바른 금액을 입력하세요" });
+      setMsg({ ok: false, text: "올바른 페블 수를 입력하세요" });
       return;
     }
     if (entry.isAdminEmail) {

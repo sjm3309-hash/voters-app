@@ -232,7 +232,7 @@ export function CreateCustomBetForm({
       <div className="space-y-2">
         <div className="flex items-center justify-between gap-2">
           <span className="text-xs font-medium text-muted-foreground">
-            베팅 선택지 ({MIN_OPTIONS}~{MAX_OPTIONS}개)
+            선택지 ({MIN_OPTIONS}~{MAX_OPTIONS}개)
           </span>
           {optionRows.length < MAX_OPTIONS && (
             <Button

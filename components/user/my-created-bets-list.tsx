@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, Loader2, Sparkles } from "lucide-react";
+import { AlertTriangle, Copy, Loader2, Sparkles } from "lucide-react";
 import { MarketCard, MARKET_FEED_GRID_CLASS } from "@/components/market-card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -49,6 +49,7 @@ export function MyCreatedBetsList({
 }: Props) {
   const router = useRouter();
   const [markets, setMarkets] = useState<Market[]>([]);
+  const [wireData, setWireData] = useState<BetFeedMarketWire[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [filterTab, setFilterTab] = useState<FilterTab>("all");
@@ -78,6 +79,7 @@ export function MyCreatedBetsList({
       }
       const mapped = j.markets.map(parseFeedWireToMarket);
       setMarkets(mapped);
+      setWireData(j.markets);
       onMarketsLoaded?.(mapped.length);
     } catch {
       setError("네트워크 오류가 발생했습니다.");
@@ -184,6 +186,22 @@ export function MyCreatedBetsList({
   const scrollMax =
     variant === "page" ? "max-h-[min(75vh,52rem)]" : "max-h-[55vh]";
 
+  const buildCloneUrl = (market: Market) => {
+    const wire = wireData.find((w) => w.id === market.id);
+    const params = new URLSearchParams();
+    params.set("q", market.question);
+    if (wire?.description) params.set("desc", wire.description);
+    if (wire?.resolver)    params.set("resolver", wire.resolver);
+    params.set("cat", market.category);
+    if (market.subCategory) params.set("sub", market.subCategory);
+    const opts = market.options.map((o) => ({ label: o.label, color: o.color }));
+    params.set("opts", encodeURIComponent(JSON.stringify(opts)));
+    params.set("endsAt", market.endsAt.toISOString());
+    const resultIso = wire?.resultAt ?? (market.resultAt ? market.resultAt.toISOString() : "");
+    if (resultIso) params.set("resultAt", resultIso);
+    return `/market/create?${params.toString()}`;
+  };
+
   return (
     <div className={cn("space-y-3", className)}>
       {/* 결과 입력 대기 알림 배너 */}
@@ -274,9 +292,24 @@ export function MyCreatedBetsList({
                       {statusLabel}
                     </Badge>
                   </div>
-                  <div className="text-sm font-bold tabular-nums text-foreground">
-                    총 참여{" "}
-                    <span className="text-chart-5">{market.totalPool.toLocaleString()} P</span>
+                  <div className="flex items-center gap-2">
+                    <div className="text-sm font-bold tabular-nums text-foreground">
+                      총 참여{" "}
+                      <span className="text-chart-5">{market.totalPool.toLocaleString()} P</span>
+                    </div>
+                    <button
+                      type="button"
+                      title="보트 복제하기"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onNavigate?.();
+                        router.push(buildCloneUrl(market));
+                      }}
+                      className="flex items-center gap-1 rounded-lg border border-border/60 bg-secondary/40 px-2 py-1 text-[11px] font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
+                    >
+                      <Copy className="size-3" />
+                      복제
+                    </button>
                   </div>
                 </div>
                 <div className="min-h-0 min-w-0 flex-1">

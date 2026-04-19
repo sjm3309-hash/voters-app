@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { AlertCircle, AlertTriangle, ArrowLeft, Check, CheckCircle2, Clock, Coins, Plus, ShieldAlert, TrendingUp, Trash2, X } from "lucide-react";
+import { AlertCircle, AlertTriangle, ArrowLeft, Check, CheckCircle2, Clock, Coins, Copy, Plus, ShieldAlert, TrendingUp, Trash2, X } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -159,6 +159,34 @@ function ColorPicker({
 // ─── KST 날짜+시간 → UTC ISO 변환 ────────────────────────────────────────────
 function kstToUtcISO(date: string, time: string): string {
   return new Date(`${date}T${time}:00+09:00`).toISOString();
+}
+
+/** UTC ISO(또는 파싱 가능한 날짜 문자열) → KST 기준 date / time (input[type=date|time]용) */
+function utcISOToKSTParts(iso: string): { date: string; time: string } | null {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(d);
+  const map = Object.fromEntries(
+    parts.filter((p) => p.type !== "literal").map((p) => [p.type, p.value]),
+  );
+  const y = map.year;
+  const m = map.month;
+  const day = map.day;
+  const hour = map.hour;
+  const minute = map.minute;
+  if (!y || !m || !day || hour === undefined || minute === undefined) return null;
+  return {
+    date: `${y}-${m}-${day}`,
+    time: `${hour.padStart(2, "0")}:${minute.padStart(2, "0")}`,
+  };
 }
 
 function nowKSTString(): string {
@@ -367,18 +395,43 @@ function CreateMarketPageInner() {
   const searchParams = useSearchParams();
   const { userId, points: balance } = useUserPointsBalance();
 
-  const initialCategory = (() => {
-    const c = searchParams.get("category");
+  // ── 복제 파라미터 파싱 ───────────────────────────────────────────────────
+  const cloneQuestion    = searchParams.get("q") ?? "";
+  const cloneDescription = searchParams.get("desc") ?? "";
+  const cloneResolver    = searchParams.get("resolver") ?? "";
+  const cloneCategory    = (() => {
+    const c = searchParams.get("category") ?? searchParams.get("cat");
     return MARKET_CATEGORIES.some((m) => m.id === c) ? c! : "fun";
   })();
+  const cloneSubCategory = searchParams.get("sub") ?? "";
+  const cloneOptions = (() => {
+    try {
+      const raw = searchParams.get("opts");
+      if (!raw) return null;
+      const parsed = JSON.parse(decodeURIComponent(raw)) as { label: string; color: string }[];
+      if (Array.isArray(parsed) && parsed.length >= 2) return parsed;
+    } catch { /* ignore */ }
+    return null;
+  })();
+  const cloneEndsKst = (() => {
+    const raw = searchParams.get("endsAt");
+    if (!raw) return null;
+    return utcISOToKSTParts(raw);
+  })();
+  const cloneResultKst = (() => {
+    const raw = searchParams.get("resultAt");
+    if (!raw) return null;
+    return utcISOToKSTParts(raw);
+  })();
+  const isClone = Boolean(cloneQuestion);
 
-  const [question, setQuestion]       = useState("");
-  const [description, setDescription] = useState("");
-  const [category, setCategory]       = useState(initialCategory);
+  const [question, setQuestion]       = useState(cloneQuestion);
+  const [description, setDescription] = useState(cloneDescription);
+  const [category, setCategory]       = useState(cloneCategory);
   const [subCategory, setSubCategory] = useState<string>(
-    () => defaultSubCategory(initialCategory) ?? "other"
+    () => cloneSubCategory || (defaultSubCategory(cloneCategory) ?? "other")
   );
-  const [resolver, setResolver]       = useState("");
+  const [resolver, setResolver]       = useState(cloneResolver);
 
   // 카테고리 변경 시 세부카테고리 첫 번째로 리셋
   const handleCategoryChange = (catId: string) => {
@@ -399,19 +452,22 @@ function CreateMarketPageInner() {
     setChecks((prev) => ({ ...prev, [key]: !prev[key] }));
 
   // 선택지 (label + color)
-  const [options, setOptions] = useState<OptionItem[]>([
-    { label: "", color: "oklch(0.65 0.22 25)"  }, // 빨강
-    { label: "", color: "oklch(0.7 0.18 230)"  }, // 파랑
-  ]);
+  const [options, setOptions] = useState<OptionItem[]>(
+    cloneOptions
+      ? cloneOptions.map((o) => ({ label: o.label, color: o.color }))
+      : [
+          { label: "", color: "oklch(0.65 0.22 25)" }, // 빨강
+          { label: "", color: "oklch(0.7 0.18 230)" }, // 파랑
+        ]
+  );
 
-  // 마감 날짜/시간 (KST)
+  // 마감·결과 날짜/시간 (KST) — 복제 URL에 endsAt/resultAt이 있으면 동일하게 채움
   const tomorrow = tomorrowKSTString();
-  const [endsDate, setEndsDate] = useState(tomorrow.date);
-  const [endsTime, setEndsTime] = useState(tomorrow.time);
+  const [endsDate, setEndsDate] = useState(cloneEndsKst?.date ?? tomorrow.date);
+  const [endsTime, setEndsTime] = useState(cloneEndsKst?.time ?? tomorrow.time);
 
-  // 결과 발표 날짜/시간 (KST)
-  const [resultDate, setResultDate] = useState("");
-  const [resultTime, setResultTime] = useState("12:00");
+  const [resultDate, setResultDate] = useState(cloneResultKst?.date ?? "");
+  const [resultTime, setResultTime] = useState(cloneResultKst?.time ?? "12:00");
 
   // ── 옵션 수정 ─────────────────────────────────────────────────────────────
   const updateLabel = (idx: number, label: string) =>
@@ -549,9 +605,24 @@ function CreateMarketPageInner() {
           <Link href="/" className="p-2 rounded-lg hover:bg-secondary transition-colors text-muted-foreground hover:text-foreground">
             <ArrowLeft className="size-5" />
           </Link>
-          <h1 className="text-lg font-bold text-foreground">보트 만들기</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-lg font-bold text-foreground">보트 만들기</h1>
+            {isClone && (
+              <span className="rounded-full bg-chart-5/15 px-2 py-0.5 text-xs font-semibold text-chart-5 border border-chart-5/30">
+                복제됨
+              </span>
+            )}
+          </div>
         </div>
       </div>
+      {isClone && (
+        <div className="max-w-2xl mx-auto px-4 pt-4">
+          <div className="flex items-center gap-2 rounded-xl border border-chart-5/30 bg-chart-5/5 px-4 py-3 text-sm text-chart-5">
+            <Copy className="size-4 shrink-0" />
+            <span>기존 보트의 내용과 마감·결과 일시가 복사되었습니다. 필요하면 수정한 뒤 등록해 주세요.</span>
+          </div>
+        </div>
+      )}
 
       <div className="max-w-2xl mx-auto px-4 py-8 space-y-6">
 

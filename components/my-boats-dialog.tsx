@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
+  Copy,
   Loader2,
   Sparkles,
   Trophy,
@@ -172,7 +173,7 @@ function ParticipatedBetsList({
         <Trophy className="size-10 text-chart-5/60" aria-hidden />
         <div>
           <p className="text-sm font-semibold text-foreground">아직 참가한 보트가 없습니다</p>
-          <p className="mt-1 text-xs text-muted-foreground">보트에 베팅해 페블을 모아보세요!</p>
+          <p className="mt-1 text-xs text-muted-foreground">보트에 참여해 페블을 모아보세요!</p>
         </div>
       </div>
     );
@@ -200,12 +201,12 @@ function ParticipatedBetsList({
                   </div>
                   {(market.myStake ?? 0) > 0 && (
                     <span className="text-xs font-bold tabular-nums text-foreground">
-                      내 베팅 <span className="text-chart-5">{market.myStake!.toLocaleString()} P</span>
+                      내 참여 <span className="text-chart-5">{market.myStake!.toLocaleString()} P</span>
                     </span>
                   )}
                 </div>
                 <div className="min-h-0 min-w-0 flex-1">
-                  <MarketCard market={market} className="h-full" onClick={() => { onClose(); router.push(`/market/${market.id}`); }} />
+                  <MarketCard market={market} className="h-full" onClick={() => { router.push(`/market/${market.id}`); }} />
                 </div>
               </div>
             );
@@ -228,6 +229,7 @@ function CreatedBetsList({
 }) {
   const router = useRouter();
   const [markets, setMarkets] = useState<Market[]>([]);
+  const [wireData, setWireData] = useState<BetFeedMarketWire[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [filterTab, setFilterTab] = useState<FilterTab>("all");
@@ -245,6 +247,7 @@ function CreatedBetsList({
         return;
       }
       setMarkets(j.markets.map(parseFeedWireToMarket));
+      setWireData(j.markets);
     } catch {
       setError("네트워크 오류가 발생했습니다.");
       setMarkets([]);
@@ -252,6 +255,22 @@ function CreatedBetsList({
       setLoading(false);
     }
   }, [userId]);
+
+  const buildCloneUrl = (market: Market) => {
+    const wire = wireData.find((w) => w.id === market.id);
+    const params = new URLSearchParams();
+    params.set("q", market.question);
+    if (wire?.description) params.set("desc", wire.description);
+    if (wire?.resolver)    params.set("resolver", wire.resolver);
+    params.set("cat", market.category);
+    if (market.subCategory) params.set("sub", market.subCategory);
+    const opts = market.options.map((o) => ({ label: o.label, color: o.color }));
+    params.set("opts", encodeURIComponent(JSON.stringify(opts)));
+    params.set("endsAt", market.endsAt.toISOString());
+    const resultIso = wire?.resultAt ?? (market.resultAt ? market.resultAt.toISOString() : "");
+    if (resultIso) params.set("resultAt", resultIso);
+    return `/market/create?${params.toString()}`;
+  };
 
   useEffect(() => { if (active && userId && userId !== "anon") void load(); }, [active, userId, load]);
 
@@ -350,12 +369,26 @@ function CreatedBetsList({
                     <Badge variant="outline" className="border-chart-5/40 bg-chart-5/10 text-[11px] font-bold text-chart-5">내 보트</Badge>
                     <Badge variant="outline" className={cn("text-[11px] font-semibold", PHASE_BADGE_CLASS[phase])}>{PHASE_SHORT[phase]}</Badge>
                   </div>
-                  <div className="text-xs font-bold tabular-nums text-foreground">
-                    총 참여 <span className="text-chart-5">{market.totalPool.toLocaleString()} P</span>
+                  <div className="flex items-center gap-2">
+                    <div className="text-xs font-bold tabular-nums text-foreground">
+                      총 참여 <span className="text-chart-5">{market.totalPool.toLocaleString()} P</span>
+                    </div>
+                    <button
+                      type="button"
+                      title="보트 복제하기"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        router.push(buildCloneUrl(market));
+                      }}
+                      className="flex items-center gap-1 rounded-lg border border-border/60 bg-secondary/40 px-2 py-1 text-[11px] font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
+                    >
+                      <Copy className="size-3" />
+                      복제
+                    </button>
                   </div>
                 </div>
                 <div className="min-h-0 min-w-0 flex-1">
-                  <MarketCard market={market} className="h-full" onClick={() => { onClose(); router.push(`/market/${market.id}`); }} />
+                  <MarketCard market={market} className="h-full" onClick={() => { router.push(`/market/${market.id}`); }} />
                 </div>
               </div>
             );
@@ -374,7 +407,7 @@ export function MyBoatsDialog({ open, onOpenChange, userId }: Props) {
     {
       key: "participated",
       label: "참가 보트",
-      sub: "내가 베팅한 보트",
+      sub: "내가 참여한 보트",
       icon: Trophy,
       accent: "text-emerald-600 dark:text-emerald-400",
       bg: "from-emerald-500/15 to-emerald-500/5 border-emerald-500/30",
@@ -406,7 +439,7 @@ export function MyBoatsDialog({ open, onOpenChange, userId }: Props) {
               <DialogTitle className="text-base font-black tracking-tight text-foreground sm:text-lg">
                 My 보트
               </DialogTitle>
-              <p className="text-[11px] text-muted-foreground mt-0.5">나의 베팅 활동을 한눈에 확인하세요</p>
+              <p className="text-[11px] text-muted-foreground mt-0.5">나의 참여 활동을 한눈에 확인하세요</p>
             </div>
           </div>
 

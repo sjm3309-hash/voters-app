@@ -46,7 +46,7 @@ export async function POST(request: Request) {
     }).then(() => {/* 실패해도 무시 */});
 
     // 알림 발송
-    const notifMessage = `🎉 축하합니다! 페블이 지급되었습니다\n금액: ${amount.toLocaleString()} P\n사유: ${reason}`;
+    const notifMessage = `🎉 축하합니다! 페블이 지급되었습니다\n페블: ${amount.toLocaleString()} P\n사유: ${reason}`;
     await svc.from("notifications").insert({
       user_id: targetUserId,
       message: notifMessage,

@@ -295,7 +295,7 @@ export function BettingDetailClient() {
                 &ldquo;{market?.question}&rdquo;
               </span>
               <span className="block">
-                이 보트와 관련된 <strong>모든 베팅 기록, 댓글</strong>이 영구 삭제됩니다.
+                이 보트와 관련된 <strong>모든 참여 기록, 댓글</strong>이 영구 삭제됩니다.
                 <br />이 작업은 <strong>되돌릴 수 없습니다.</strong>
               </span>
             </DialogDescription>
@@ -491,8 +491,8 @@ export function BettingDetailClient() {
             {/* 통계 */}
             {stats && (
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <Stat label="베팅 건수" value={String(stats.betCount)} />
-                <Stat label="총 베팅액(P)" value={stats.totalAmount.toLocaleString()} />
+                <Stat label="참여 건수" value={String(stats.betCount)} />
+                <Stat label="총 참여액(P)" value={stats.totalAmount.toLocaleString()} />
                 <Stat label="참여자(추정)" value={String(stats.uniqueBettors)} />
                 <Stat label="선택지별 합계" value={`${Object.keys(stats.optionTotals).length}개 키`} />
               </div>

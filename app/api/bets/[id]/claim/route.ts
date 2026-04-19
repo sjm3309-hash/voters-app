@@ -124,7 +124,7 @@ export async function POST(
 
   if (myWinning <= 0) {
     return NextResponse.json(
-      { ok: false, error: "no_winning_bet", message: "당첨 선택지에 베팅한 내역이 없습니다." },
+      { ok: false, error: "no_winning_bet", message: "당첨 선택지에 참여한 내역이 없습니다." },
       { status: 400 },
     );
   }
@@ -135,7 +135,7 @@ export async function POST(
 
   if (payout <= 0) {
     return NextResponse.json(
-      { ok: false, error: "zero_payout", message: "배당 금액이 0 이하입니다." },
+      { ok: false, error: "zero_payout", message: "배당 페블이 0 이하입니다." },
       { status: 400 },
     );
   }

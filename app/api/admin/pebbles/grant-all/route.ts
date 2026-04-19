@@ -77,7 +77,7 @@ export async function POST(request: Request) {
           // 알림 발송 (실패해도 무시)
           void svc.from("notifications").insert({
             user_id: id,
-            message: `🎉 축하합니다! 페블이 지급되었습니다\n금액: ${amount.toLocaleString()} P\n사유: ${reason}`,
+            message: `🎉 축하합니다! 페블이 지급되었습니다\n페블: ${amount.toLocaleString()} P\n사유: ${reason}`,
             link: null,
             is_read: false,
           });
