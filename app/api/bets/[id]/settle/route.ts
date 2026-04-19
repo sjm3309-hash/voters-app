@@ -5,6 +5,10 @@ import { isAdminEmail } from "@/lib/admin";
 import { isUuidString } from "@/lib/is-uuid";
 import { optionIdsForLabels, resolveBetOptionLabels } from "@/lib/bets-market-mapper";
 import { adjustPebblesAtomic } from "@/lib/pebbles-db";
+import { CREATE_USER_MARKET_COST } from "@/lib/points-constants";
+
+/** 노콘테스트(한쪽만 베팅) 시 창작자에게 돌려주는 페블 = 생성 비용의 절반 */
+const NO_CONTEST_CREATOR_REFUND = Math.floor(CREATE_USER_MARKET_COST / 2);
 import {
   getBetHistoryFlavor,
   betHistoryMarketCol,
@@ -163,10 +167,21 @@ export async function POST(
       );
     }
 
-    const refundResults: { userId: string; amount: number; ok: boolean }[] = [];
-    for (const [userId, amount] of refundMap) {
-      const r = await adjustPebblesAtomic(userId, amount);
-      refundResults.push({ userId, amount, ok: r.ok });
+    // 참여 유저 전액 환불
+    for (const [uid, amount] of refundMap) {
+      await adjustPebblesAtomic(uid, amount);
+    }
+
+    // 창작자에게 생성 비용 절반(5,000P) 환불 (5% 수수료 아님)
+    const creatorId = r.user_id ? String(r.user_id).trim() : "";
+    if (creatorId && creatorId !== "anon") {
+      await adjustPebblesAtomic(creatorId, NO_CONTEST_CREATOR_REFUND);
+      void svc.from("pebble_transactions").insert({
+        user_id: creatorId,
+        amount: NO_CONTEST_CREATOR_REFUND,
+        type: "creator_refund",
+        description: `↩ 보트 노콘테스트 창작자 환불 — ${NO_CONTEST_CREATOR_REFUND.toLocaleString()}P`,
+      });
     }
 
     return NextResponse.json(

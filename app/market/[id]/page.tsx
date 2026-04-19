@@ -934,6 +934,10 @@ export default function MarketDetailPage() {
               : prev,
           );
           void refreshPebblesFromServer(userId);
+          const isCreatorSettling = market.authorId && market.authorId === userId;
+          if (isCreatorSettling) {
+            window.alert("한쪽에만 참여가 있어 전액 환불 처리되었습니다.\n창작자 비용 5,000P가 환불되었습니다.");
+          }
         } else {
           setMarketData((prev) =>
             prev
