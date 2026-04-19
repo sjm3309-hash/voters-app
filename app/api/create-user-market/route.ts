@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/utils/supabase/server";
 import { createServiceRoleClient } from "@/utils/supabase/service-role";
 import { ensureProfileRowExists } from "@/lib/ensure-profile";
-import { isAdminEmail } from "@/lib/admin";
+import { isAdminEmail, isAdminUserId } from "@/lib/admin";
 import { adjustPebblesAtomic } from "@/lib/pebbles-db";
 import { CREATE_USER_MARKET_COST } from "@/lib/points-constants";
 import {
@@ -109,7 +109,7 @@ export async function POST(request: Request) {
     }
 
     let chargedPebbles = false;
-    const feeWaived = isAdminEmail(user.email);
+    const feeWaived = isAdminEmail(user.email) || isAdminUserId(user.id);
     if (!feeWaived) {
       const spent = await adjustPebblesAtomic(user.id, -CREATE_USER_MARKET_COST);
       if (!spent.ok) {
@@ -127,6 +127,14 @@ export async function POST(request: Request) {
         );
       }
       chargedPebbles = true;
+      // 보트 생성 비용 차감 기록
+      void supabase.from("pebble_transactions").insert({
+        user_id: user.id,
+        amount: -CREATE_USER_MARKET_COST,
+        balance_after: spent.balance,
+        type: "spend",
+        description: `🚤 보트 만들기 비용 — ${CREATE_USER_MARKET_COST.toLocaleString()}P`,
+      });
     }
 
     /** JSONB: [{ label, color }, ...] — 홈·상세에서 옵션별 색상 반영 */

@@ -74,7 +74,8 @@ function txIcon(type: string, description = "") {
     case "vote":
     case "spend":          return <ArrowUpRight className="size-3.5 text-red-400" />;
     case "refund":
-    case "bet_refund":     return <ArrowDownLeft className="size-3.5 text-blue-400" />;
+    case "bet_refund":
+    case "creator_refund": return <ArrowDownLeft className="size-3.5 text-blue-400" />;
     case "daily_reward":   return <CalendarCheck className="size-3.5 text-sky-400" />;
     case "level_up":       return <TrendingUp className="size-3.5 text-chart-5" />;
     case "reward":
@@ -96,7 +97,9 @@ function txLabel(type: string, description: string): string {
     case "creator_fee":  return "창작자 수수료";
     case "admin_grant":  return "운영자 지급";
     case "admin_deduct": return "운영자 차감";
-    case "refund":       return "환불";
+    case "refund":
+    case "bet_refund":   return "보트 참여 환불";
+    case "creator_refund": return "보트 노콘테스트 환불";
     case "reward":       return "페블 획득";
     case "spend":        return "페블 사용";
     default:             return type || "페블 변동";

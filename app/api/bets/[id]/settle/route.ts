@@ -167,9 +167,18 @@ export async function POST(
       );
     }
 
-    // 참여 유저 전액 환불
+    // 참여 유저 전액 환불 + 기록
     for (const [uid, amount] of refundMap) {
-      await adjustPebblesAtomic(uid, amount);
+      const refundResult = await adjustPebblesAtomic(uid, amount);
+      if (refundResult.ok) {
+        void svc.from("pebble_transactions").insert({
+          user_id: uid,
+          amount,
+          balance_after: refundResult.balance,
+          type: "bet_refund",
+          description: `↩ 보트 참여 환불 (노콘테스트) — ${amount.toLocaleString()}P`,
+        });
+      }
     }
 
     // 창작자에게 생성 비용 절반(5,000P) 환불 (5% 수수료 아님)
