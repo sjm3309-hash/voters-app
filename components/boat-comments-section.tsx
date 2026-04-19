@@ -12,6 +12,7 @@ import { representativeInkForNickname } from "@/lib/representative-ink";
 import { hexToRgba, resolveOptionColor } from "@/lib/option-colors";
 import { isUuidString } from "@/lib/is-uuid";
 import { AdminAuthorBadge } from "@/components/admin-author-badge";
+import { AuthorLevelIcon } from "@/components/level-icon";
 import { ReportButton } from "@/components/report-button";
 import { DislikeButton } from "@/components/dislike-button";
 import { isAdminUserId } from "@/lib/admin";
@@ -149,7 +150,8 @@ function CommentCard({
       {/* 작성자 + 시간 */}
       <div className="flex items-start justify-between gap-1.5">
         <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-baseline gap-x-1 gap-y-0">
+          <div className="flex flex-wrap items-center gap-x-1 gap-y-0">
+            <AuthorLevelIcon name={author} size={13} className="shrink-0" />
             <AdminAuthorBadge
               name={author}
               userId={userId}

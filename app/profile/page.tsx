@@ -31,12 +31,13 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/components/ui/tabs";
-import { MyCreatedBetsList } from "@/components/user/my-created-bets-list";
 import { LevelIcon } from "@/components/level-icon";
 import { useUserPointsBalance } from "@/lib/points";
 import {
   getTierByLevel,
   levelLabelTrackingClassName,
+  setUserManualLevel,
+  cacheAuthorManualLevel,
 } from "@/lib/level-system";
 import { getUpgradeCost, getDailyReward } from "@/lib/levelConfig";
 import type { BoardPost } from "@/lib/board";
@@ -45,7 +46,7 @@ import { createClient } from "@/utils/supabase/client";
 import { isAdminEmail } from "@/lib/admin";
 import { cn } from "@/lib/utils";
 
-type ProfileTab = "me" | "posts" | "comments" | "my-bets" | "password";
+type ProfileTab = "me" | "posts" | "comments" | "password";
 
 export default function ProfilePage() {
   const { points: balance, userId } = useUserPointsBalance();
@@ -60,9 +61,6 @@ export default function ProfilePage() {
   const [postsLoading, setPostsLoading] = useState(false);
   const [comments, setComments] = useState<(Comment & { postTitle?: string })[]>([]);
   const [commentsLoading, setCommentsLoading] = useState(false);
-  const [myBetsCount, setMyBetsCount] = useState<number | null>(null);
-  const [myWaitingBetsCount, setMyWaitingBetsCount] = useState(0);
-
   const [pwdCurrent, setPwdCurrent] = useState("");
   const [pwdNew, setPwdNew] = useState("");
   const [pwdConfirm, setPwdConfirm] = useState("");
@@ -201,6 +199,10 @@ export default function ProfilePage() {
         if (res.ok && j.ok && j.newLevel) {
           setUserLevel(j.newLevel);
           setLevelUpMsg({ type: "ok", text: `Lv.${j.newLevel} 달성! 🎉` });
+          // userId 기반 레벨 캐시 업데이트 → voters:levelUpdated 이벤트 발행
+          setUserManualLevel(userId, j.newLevel);
+          // displayName 기반 캐시 업데이트 → AuthorLevelIcon 실시간 반영
+          if (userName) cacheAuthorManualLevel(userName, j.newLevel);
           // 잔액 갱신 트리거
           window.dispatchEvent(new CustomEvent("voters:balanceUpdated"));
           setTimeout(() => setLevelUpOpen(false), 1200);
@@ -345,8 +347,8 @@ export default function ProfilePage() {
   }
 
   const tabGridClass = canChangePassword
-    ? "grid-cols-2 sm:grid-cols-3 lg:grid-cols-5"
-    : "grid-cols-2 sm:grid-cols-4";
+    ? "grid-cols-2 sm:grid-cols-4"
+    : "grid-cols-3";
 
   return (
     <div className="min-h-screen bg-background">
@@ -382,15 +384,6 @@ export default function ProfilePage() {
             </TabsTrigger>
             <TabsTrigger value="comments" className="text-xs sm:text-sm min-h-[36px]">
               댓글 ({myComments.length})
-            </TabsTrigger>
-            <TabsTrigger value="my-bets" className="relative text-xs sm:text-sm min-h-[36px]">
-              내 보트
-              {myBetsCount !== null ? ` (${myBetsCount})` : ""}
-              {myWaitingBetsCount > 0 && (
-                <span className="ml-1 inline-flex items-center justify-center rounded-full bg-amber-500 text-white text-[10px] font-bold min-w-[16px] h-4 px-1">
-                  {myWaitingBetsCount}
-                </span>
-              )}
             </TabsTrigger>
             {canChangePassword && (
               <TabsTrigger value="password" className="gap-0.5 text-xs sm:text-sm min-h-[36px]">
@@ -571,16 +564,6 @@ export default function ProfilePage() {
                 ))
               )}
             </div>
-          </TabsContent>
-
-          <TabsContent value="my-bets" className="mt-4">
-            <MyCreatedBetsList
-              active={tab === "my-bets"}
-              userId={userId}
-              variant="page"
-              onMarketsLoaded={setMyBetsCount}
-              onWaitingCount={setMyWaitingBetsCount}
-            />
           </TabsContent>
 
           {canChangePassword && (

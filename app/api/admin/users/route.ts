@@ -40,12 +40,12 @@ async function mapAuthUsersToRows(
   authUsers: User[],
 ): Promise<AdminUsersApiRow[]> {
   const ids = authUsers.map((u) => u.id).filter(Boolean);
-  const profileById = new Map<string, { pebbles: number }>();
+  const profileById = new Map<string, { pebbles: number; level: number }>();
 
   if (ids.length > 0) {
     const { data: profiles, error: pErr } = await svc
       .from("profiles")
-      .select("id, pebbles")
+      .select("id, pebbles, level")
       .in("id", ids);
 
     if (pErr) {
@@ -55,10 +55,12 @@ async function mapAuthUsersToRows(
     for (const row of (profiles ?? []) as {
       id?: string;
       pebbles?: number | null;
+      level?: number | null;
     }[]) {
       if (!row.id) continue;
       profileById.set(row.id, {
         pebbles: Math.max(0, Math.floor(Number(row.pebbles ?? 0))),
+        level: Math.max(1, Math.min(56, Math.floor(Number(row.level ?? 1)))),
       });
     }
   }
@@ -83,6 +85,7 @@ async function mapAuthUsersToRows(
       displayName: displayNameFromUser(u),
       createdAt: u.created_at ?? null,
       pebbles,
+      level: prof?.level ?? 1,
       profileMissing,
       isAdminEmail: adminEmail,
     };

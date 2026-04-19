@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeft, Award, CheckCircle2, Clock, Coins, ExternalLink, Eye, ThumbsUp, TrendingUp, Trophy, Users, X } from "lucide-react";
+import { ArrowLeft, Award, CheckCircle2, Clock, Coins, ExternalLink, Eye, Loader2, ThumbsUp, TrendingUp, Trophy, Users, X } from "lucide-react";
 import { ReportButton } from "@/components/report-button";
 import { DislikeButton } from "@/components/dislike-button";
 import { Navbar } from "@/components/navbar";
@@ -29,6 +29,7 @@ import { getUserMarketById, updateUserMarket, type UserMarket } from "@/lib/mark
 import { useIsAdmin } from "@/hooks/use-is-admin";
 import { getMarketViews, incrementMarketViews } from "@/lib/market-views";
 import {
+  calculateExpectedPayout,
   calculateFees,
   calculateUserPayout,
   hasClaimedWinnings,
@@ -506,8 +507,11 @@ export default function MarketDetailPage() {
   const [comments, setComments] = useState<MarketComment[]>([]);
   const [stakesRefreshToken, setStakesRefreshToken] = useState(0);
   const [bets, setBets] = useState<MarketBet[]>([]);
+  /** Realtime으로 수신된 다른 유저 베팅의 선택지별 추가 금액 (서버 동기화 시 초기화) */
+  const [realtimeDelta, setRealtimeDelta] = useState<Record<string, number>>({});
   /** DB bet_history 기준 내 선택지별 누적 (UUID 보트·로그인 시) */
   const [myStakeByOption, setMyStakeByOption] = useState<Record<string, number>>({});
+  const [claiming, setClaiming] = useState(false);
 
   // 작성자 이름 (Supabase → display name)
   useEffect(() => {
@@ -585,6 +589,46 @@ export default function MarketDetailPage() {
     };
   }, [marketId]);
 
+  // ── Realtime: 다른 유저의 bet_history INSERT 실시간 수신 ─────────────────
+  useEffect(() => {
+    if (!isUuidString(marketId)) return;
+    const supabase = createClient();
+    const channel = supabase
+      .channel(`bet_pool:${marketId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "bet_history",
+          // bet_id 컬럼 기준 필터 (place_bets_secure RPC가 bet_id 사용)
+          filter: `bet_id=eq.${marketId}`,
+        },
+        (payload) => {
+          const row = payload.new as {
+            user_id?: string;
+            choice?: string;
+            option_id?: string;
+            amount?: number;
+          };
+          // 내 베팅은 handlePlaceBet에서 optionTotals로 이미 반영됨 → 중복 방지
+          if (row.user_id && row.user_id === userId) return;
+
+          const optionId = (row.choice ?? row.option_id ?? "").trim();
+          const amount = Math.floor(Number(row.amount ?? 0));
+          if (!optionId || amount <= 0) return;
+
+          setRealtimeDelta((prev) => ({
+            ...prev,
+            [optionId]: (prev[optionId] ?? 0) + amount,
+          }));
+        },
+      )
+      .subscribe();
+
+    return () => { void supabase.removeChannel(channel); };
+  }, [marketId, userId]);
+
   const derivedMarket = useMemo(() => {
     if (!market) {
       return {
@@ -596,6 +640,10 @@ export default function MarketDetailPage() {
     const betByOptionId = new Map<string, number>();
     for (const b of bets) {
       betByOptionId.set(b.optionId, (betByOptionId.get(b.optionId) ?? 0) + b.amount);
+    }
+    // Realtime으로 수신된 다른 유저의 추가 베팅 반영
+    for (const [oid, extra] of Object.entries(realtimeDelta)) {
+      betByOptionId.set(oid, (betByOptionId.get(oid) ?? 0) + extra);
     }
     const stakeSum = [...betByOptionId.values()].reduce((acc, x) => acc + x, 0);
 
@@ -618,7 +666,7 @@ export default function MarketDetailPage() {
     }));
 
     return { totalPool, options };
-  }, [bets, market]);
+  }, [bets, market, realtimeDelta]);
 
   const optionLabelByIdDerived = useMemo(() => {
     const map = new Map<string, string>();
@@ -652,6 +700,20 @@ export default function MarketDetailPage() {
     const total = entries.reduce((acc, [, v]) => acc + v, 0);
     return { entries, total };
   }, [betsByAuthor, userId, myStakeByOption, marketId]);
+
+  /** 내가 베팅한 선택지별 현재 예상 배당 (Realtime 풀 변동에 따라 자동 갱신) */
+  const myExpectedPayouts = useMemo(() => {
+    if (myBetSummary.total <= 0) return [];
+    return myBetSummary.entries.map(([optId, myAmt]) => {
+      const optIdx = derivedMarket.options.findIndex((o) => o.id === optId);
+      const opt = optIdx >= 0 ? derivedMarket.options[optIdx] : undefined;
+      const pct = opt?.percentage ?? 0;
+      const expected = pct > 0 ? calculateExpectedPayout(myAmt, pct) : 0;
+      const label = opt?.label ?? optionLabelByIdDerived.get(optId) ?? optId;
+      const fillColor = opt ? resolveOptionColor(opt.color, optIdx) : "var(--chart-5)";
+      return { optId, myAmt, expected, label, fillColor };
+    });
+  }, [myBetSummary, derivedMarket.options, optionLabelByIdDerived]);
 
   if (feedLoading && !market) {
     return (
@@ -784,6 +846,8 @@ export default function MarketDetailPage() {
         setBets(getBetsForMarket(marketId));
         const pool = Object.values(json.optionTotals).reduce((a, x) => a + x, 0);
         setMarketData((prev) => (prev ? { ...prev, totalPool: pool } : prev));
+        // 서버에서 최신 풀 받았으므로 Realtime 누적분 초기화 (중복 방지)
+        setRealtimeDelta({});
         syncedFromServer = true;
       }
       if (json.myOptionTotals && typeof json.myOptionTotals === "object") {
@@ -933,11 +997,46 @@ export default function MarketDetailPage() {
   const canClaim = isSettled && myWinningBets > 0 && myPayout > 0 && !alreadyClaimed && userId !== "anon";
 
   const handleClaim = () => {
-    if (!canClaim) return;
+    if (!canClaim || claiming) return;
     void (async () => {
-      await earnUserPoints(userId, myPayout, `🎉 보트 페블 보상 수령 — ${market?.question?.slice(0, 20) ?? ""}…`);
-      await refreshPebblesFromServer(userId);
-      markWinningsClaimed(userId, marketId);
+      setClaiming(true);
+      try {
+        const res = await fetch(`/api/bets/${encodeURIComponent(marketId)}/claim`, {
+          method: "POST",
+          credentials: "same-origin",
+        });
+        const j = (await res.json().catch(() => ({}))) as {
+          ok?: boolean;
+          payout?: number;
+          balance?: number;
+          error?: string;
+          message?: string;
+        };
+        if (res.ok && j.ok) {
+          // 서버에서 지급 완료 → 잔액 갱신 + 로컬 클레임 표시
+          if (typeof j.balance === "number" && userId && userId !== "anon") {
+            setUserPoints(userId, j.balance);
+          } else {
+            await refreshPebblesFromServer(userId);
+          }
+          markWinningsClaimed(userId, marketId);
+          toast.success("페블 수령 완료!", {
+            description: `${(j.payout ?? myPayout).toLocaleString()} P가 지급되었습니다.`,
+          });
+        } else if (j.error === "already_claimed") {
+          // 다른 기기에서 이미 수령한 경우
+          markWinningsClaimed(userId, marketId);
+          toast.info("이미 수령한 보상입니다.");
+        } else {
+          toast.error("수령 실패", {
+            description: j.message ?? j.error ?? "잠시 후 다시 시도해주세요.",
+          });
+        }
+      } catch {
+        toast.error("네트워크 오류", { description: "잠시 후 다시 시도해주세요." });
+      } finally {
+        setClaiming(false);
+      }
     })();
   };
 
@@ -1198,15 +1297,18 @@ export default function MarketDetailPage() {
                         <button
                           type="button"
                           onClick={handleClaim}
-                          className="w-full py-2.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-colors duration-200"
+                          disabled={claiming}
+                          className="w-full py-2.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-colors duration-200 disabled:opacity-70 disabled:cursor-not-allowed"
                           style={{
                             backgroundColor: winAccent ?? "var(--chart-5)",
                             color: winAccent ? pickReadableTextOnAccent(winAccent) : "#ffffff",
-                            boxShadow: winAccent ? `0 4px 16px ${accentMutedBorder(winAccent)}` : undefined,
+                            boxShadow: claiming ? "none" : winAccent ? `0 4px 16px ${accentMutedBorder(winAccent)}` : undefined,
                           }}
                         >
-                          <Award className="size-4" />
-                          페블 보상 수령 — {myPayout.toLocaleString()} P
+                          {claiming
+                            ? <><Loader2 className="size-4 animate-spin" />처리 중…</>
+                            : <><Award className="size-4" />페블 보상 수령 — {myPayout.toLocaleString()} P</>
+                          }
                         </button>
                       )}
                       {isSettled && myWinningBets > 0 && alreadyClaimed && (
@@ -1490,6 +1592,33 @@ export default function MarketDetailPage() {
                   <h2 className="text-lg font-semibold text-foreground mb-4">
                     보트하기
                   </h2>
+                  {myBetSummary.total > 0 && (
+                    <div className="mb-4 rounded-lg border border-border/50 bg-secondary/10 px-4 py-3">
+                      <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">내 보트 현황</div>
+                      <div className="space-y-2">
+                        {myExpectedPayouts.map(({ optId, myAmt, expected, label, fillColor }) => (
+                          <div key={optId} className="rounded-lg bg-card border border-border/40 px-3 py-2">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-xs font-semibold truncate" style={{ color: fillColor }}>{label}</span>
+                              <span className="text-xs tabular-nums text-muted-foreground shrink-0">{myAmt.toLocaleString()} P 베팅</span>
+                            </div>
+                            {expected > 0 && (
+                              <div className="mt-1 flex items-center gap-1">
+                                <TrendingUp className="size-3 shrink-0" style={{ color: fillColor }} />
+                                <span className="text-xs text-muted-foreground">적중 시</span>
+                                <span className="text-sm font-bold tabular-nums" style={{ color: fillColor }}>
+                                  ~{expected.toLocaleString()} P
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                        <div className="text-[10px] text-muted-foreground pt-0.5">
+                          * 예상 배당은 현재 참여 비율 기준이며 변동될 수 있습니다
+                        </div>
+                      </div>
+                    </div>
+                  )}
                   {authLoading ? (
                     <div className="flex items-center justify-center py-10 text-sm text-muted-foreground">
                       로딩 중...
@@ -1540,19 +1669,30 @@ export default function MarketDetailPage() {
                     보트하기
                   </h2>
                   <div className="mb-4 rounded-lg border border-border/50 bg-secondary/10 px-4 py-3">
-                    <div className="text-xs text-muted-foreground">내 보트 페블</div>
+                    <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">내 보트 현황</div>
                     {myBetSummary.total <= 0 ? (
-                      <div className="mt-1 text-sm text-muted-foreground">아직 걸린 페블이 없습니다.</div>
+                      <div className="text-sm text-muted-foreground">아직 걸린 페블이 없습니다.</div>
                     ) : (
-                      <div className="mt-2 space-y-1">
-                        <div className="text-sm font-semibold text-foreground">
-                          총 {myBetSummary.total.toLocaleString()} P
-                        </div>
-                        <div className="text-xs text-muted-foreground">
-                          {myBetSummary.entries
-                            .slice(0, 3)
-                            .map(([optId, amt]) => `${optionLabelByIdDerived.get(optId) ?? optId} ${amt.toLocaleString()}P`)
-                            .join(" · ")}
+                      <div className="space-y-2">
+                        {myExpectedPayouts.map(({ optId, myAmt, expected, label, fillColor }) => (
+                          <div key={optId} className="rounded-lg bg-card border border-border/40 px-3 py-2">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-xs font-semibold truncate" style={{ color: fillColor }}>{label}</span>
+                              <span className="text-xs tabular-nums text-muted-foreground shrink-0">{myAmt.toLocaleString()} P 베팅</span>
+                            </div>
+                            {expected > 0 && (
+                              <div className="mt-1 flex items-center gap-1">
+                                <TrendingUp className="size-3 shrink-0" style={{ color: fillColor }} />
+                                <span className="text-xs text-muted-foreground">적중 시</span>
+                                <span className="text-sm font-bold tabular-nums" style={{ color: fillColor }}>
+                                  ~{expected.toLocaleString()} P
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                        <div className="text-[10px] text-muted-foreground pt-0.5">
+                          * 예상 배당은 현재 참여 비율 기준이며 변동될 수 있습니다
                         </div>
                       </div>
                     )}

@@ -105,9 +105,9 @@ export function AuthButton() {
             </span>
           )}
         </div>
-        <Button variant="outline" size="sm" className="shrink-0" onClick={handleLogout}>
+        <Button variant="outline" size="sm" className="shrink-0 gap-1.5" onClick={handleLogout}>
           <LogOut className="size-4" />
-          로그아웃
+          <span className="hidden sm:inline">로그아웃</span>
         </Button>
       </div>
     );

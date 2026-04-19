@@ -68,7 +68,7 @@ export function Navbar({ balance, userId, searchQuery, onSearch }: NavbarProps) 
           </div>
         </div>
 
-        <div className="flex items-center gap-3 md:gap-4">
+        <div className="flex items-center gap-1 sm:gap-2 md:gap-3">
           {onSearch ? (
             <>
               <button
@@ -164,7 +164,7 @@ export function Navbar({ balance, userId, searchQuery, onSearch }: NavbarProps) 
           {levelMounted && loggedIn && (
             <button
               onClick={() => setHistoryOpen(true)}
-              className="flex shrink-0 items-center gap-2 px-3 py-1.5 rounded-full bg-chart-5/10 border border-chart-5/30 hover:bg-chart-5/20 hover:border-chart-5/50 transition-colors whitespace-nowrap"
+              className="flex shrink-0 items-center gap-1.5 px-2 py-1.5 sm:px-3 sm:gap-2 rounded-full bg-chart-5/10 border border-chart-5/30 hover:bg-chart-5/20 hover:border-chart-5/50 transition-colors whitespace-nowrap"
               title="페블 내역 보기"
             >
               {/* 운영자 배지만 표시, 일반 유저는 아이콘 없음 */}

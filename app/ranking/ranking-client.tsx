@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { Trophy, ArrowUp, ArrowDown, Minus, ChevronLeft, ChevronRight } from "lucide-react";
+import { Trophy, ArrowUp, ArrowDown, Minus, ChevronLeft, ChevronRight, ArrowLeft } from "lucide-react";
+import Link from "next/link";
 import { createClient } from "@/utils/supabase/client";
 import { LevelIcon } from "@/components/level-icon";
 import type { RankingEntry } from "@/app/api/ranking/route";
@@ -181,7 +182,14 @@ export function RankingClient() {
       <div className="max-w-5xl mx-auto px-4 py-6 sm:py-8">
         {/* 헤더 */}
         <div className="flex items-center gap-3 mb-6">
-          <Trophy className="size-6 text-yellow-400" />
+          <Link
+            href="/"
+            className="p-1.5 rounded-lg hover:bg-secondary transition-colors text-muted-foreground hover:text-foreground shrink-0"
+            aria-label="홈으로"
+          >
+            <ArrowLeft className="size-5" />
+          </Link>
+          <Trophy className="size-6 text-yellow-400 shrink-0" />
           <div>
             <h1 className="text-xl font-bold">유저 순위</h1>
             <p className="text-xs text-muted-foreground mt-0.5">

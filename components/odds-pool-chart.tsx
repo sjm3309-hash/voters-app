@@ -19,6 +19,8 @@ type Option = {
   label: string;
   percentage: number;
   color: string;
+  /** 실제 베팅 페블 수량. 제공 시 percentage 역산 대신 이 값을 사용 */
+  points?: number;
 };
 
 type Props = {
@@ -42,7 +44,8 @@ export function OddsPoolChart({ options, totalPool, className }: Props) {
   const data = useMemo(() => {
     return options.map((o, idx) => {
       const pct = totalPool > 0 ? o.percentage : 0;
-      const points = Math.round((totalPool * pct) / 100);
+      // 실제 베팅 수량이 있으면 그대로 사용 (percentage 역산 시 반올림 오차 방지)
+      const points = o.points !== undefined ? o.points : Math.round((totalPool * pct) / 100);
       const fillColor = resolveOptionColor(o.color, idx);
       return {
         id: o.id,

@@ -3,9 +3,8 @@
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { MessageSquare, Vote } from "lucide-react";
+import { Loader2, MessageSquare, Settings2, Vote } from "lucide-react";
 import { useInView } from "react-intersection-observer";
-import { Loader2, Settings2 } from "lucide-react";
 import { Navbar } from "@/components/navbar";
 import { CategoryFilter, FilterId, isSortFilter } from "@/components/category-filter";
 import { isValidBoardTab } from "@/lib/board-navigation";
@@ -35,7 +34,6 @@ import {
 import { TrendingBetsSidebar } from "@/components/trending-bets-sidebar";
 import { TrendingPostsSidebar } from "@/components/trending-posts-sidebar";
 import { useUserPointsBalance } from "@/lib/points";
-import { checkAndGrantAttendance } from "@/lib/daily-rewards";
 import { marketTrendingScore } from "@/lib/trending";
 import {
   loadHomeViewMode,
@@ -54,6 +52,7 @@ import { cn } from "@/lib/utils";
 import { parseFeedWireToMarket, type BetFeedMarketWire } from "@/lib/bets-feed-wire";
 import { buildBetsFeedSearchParams } from "@/lib/bets-feed-home-query";
 import { AdSlot } from "@/components/ads/ad-slot";
+import { MyBoatsDialog } from "@/components/my-boats-dialog";
 
 /** 인피드 광고 — N번째 카드 뒤에 삽입 */
 const AD_FEED_INTERVAL = 5; // 5개 마다 광고 1개
@@ -251,6 +250,7 @@ export function HomeClient() {
   const { userId, points: userBalance } = useUserPointsBalance();
   const [viewMode, setViewMode] = useState<HomeViewMode>("split");
   const [displaySettingsOpen, setDisplaySettingsOpen] = useState(false);
+  const [myBoatsOpen, setMyBoatsOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
 
   // 모바일 감지 (md 기준: 768px)
@@ -481,12 +481,6 @@ export function HomeClient() {
     if (feedTab !== "politics") setPoliticsSubCategory("all");
   }, [feedTab]);
 
-  // 로그인된 유저에게 출석 보상 지급 (하루 1회)
-  useEffect(() => {
-    if (userId && userId !== "anon") {
-      void checkAndGrantAttendance(userId);
-    }
-  }, [userId]);
 
   const sortMode = isSortFilter(feedTab) ? feedTab : "popular";
   const categoryFilter = isSortFilter(feedTab) ? "all" : feedTab;
@@ -690,6 +684,18 @@ export function HomeClient() {
                 </div>
               </div>
             </div>
+            {userId && userId !== "anon" && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-9 shrink-0 gap-1.5 border-border/60 text-xs sm:text-sm"
+                onClick={() => setMyBoatsOpen(true)}
+              >
+                <Vote className="size-3.5" aria-hidden />
+                My 보트
+              </Button>
+            )}
             <Button
               type="button"
               variant="outline"
@@ -867,6 +873,12 @@ export function HomeClient() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <MyBoatsDialog
+        open={myBoatsOpen}
+        onOpenChange={setMyBoatsOpen}
+        userId={userId}
+      />
     </div>
   );
 }

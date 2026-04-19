@@ -223,7 +223,8 @@ export default function BoardPostPage() {
     setEditContent(post.content);
   }, [isEditing, post]);
 
-  const canManage = !!post && !!currentUserId && post.authorId === currentUserId;
+  const isAdmin = isAdminUserId(currentUserId);
+  const canManage = !!post && !!currentUserId && (post.authorId === currentUserId || isAdmin);
 
   const handleSubmitComment = async () => {
     const trimmed = commentText.trim();
@@ -356,7 +357,11 @@ export default function BoardPostPage() {
   };
 
   const handleDelete = async () => {
-    const ok = window.confirm("정말로 이 게시글을 삭제할까요? 댓글도 함께 삭제됩니다.");
+    const msg =
+      isAdmin && post?.authorId !== currentUserId
+        ? "[운영진] 이 게시글을 삭제하시겠습니까? 댓글도 함께 삭제됩니다."
+        : "정말로 이 게시글을 삭제할까요? 댓글도 함께 삭제됩니다.";
+    const ok = window.confirm(msg);
     if (!ok) return;
     setIsDeleting(true);
     try {
@@ -476,10 +481,13 @@ export default function BoardPostPage() {
               </CardTitle>
               {canManage && !isEditing && (
                 <div className="flex items-center gap-2">
-                  <Button variant="outline" size="sm" onClick={() => setIsEditing(true)}>
-                    <Pencil className="size-4" />
-                    수정
-                  </Button>
+                  {/* 수정은 본인 글에만, 운영진은 삭제만 가능 */}
+                  {post.authorId === currentUserId && (
+                    <Button variant="outline" size="sm" onClick={() => setIsEditing(true)}>
+                      <Pencil className="size-4" />
+                      수정
+                    </Button>
+                  )}
                   <Button
                     variant="destructive"
                     size="sm"
@@ -487,7 +495,7 @@ export default function BoardPostPage() {
                     disabled={isDeleting}
                   >
                     {isDeleting ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
-                    삭제
+                    {isAdmin && post.authorId !== currentUserId ? "운영진 삭제" : "삭제"}
                   </Button>
                 </div>
               )}
@@ -498,11 +506,8 @@ export default function BoardPostPage() {
             {post.images && post.images.length > 0 && (
               <div className="mb-5 space-y-3">
                 {post.images.map((src, idx) => (
-                  <a
+                  <div
                     key={`${src}-${idx}`}
-                    href={src}
-                    target="_blank"
-                    rel="noreferrer"
                     className="block overflow-hidden rounded-xl border border-border/50 bg-secondary/10"
                   >
                     <img
@@ -510,7 +515,7 @@ export default function BoardPostPage() {
                       alt=""
                       className="w-full max-h-[520px] object-contain bg-black/5"
                     />
-                  </a>
+                  </div>
                 ))}
               </div>
             )}

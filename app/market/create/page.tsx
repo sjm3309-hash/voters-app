@@ -583,37 +583,6 @@ function CreateMarketPageInner() {
           </div>
         </section>
 
-        {/* 질문 */}
-        <section className="space-y-2">
-          <label className="text-sm font-semibold text-foreground">
-            보트 질문 <span className="text-red-400">*</span>
-          </label>
-          <Input
-            placeholder="예) 비트코인 2026년 내 20만 달러 돌파할까?"
-            value={question}
-            onChange={(e) => setQuestion(e.target.value)}
-            maxLength={100}
-            className="text-base"
-          />
-          <p className="text-xs text-muted-foreground text-right">{question.length}/100</p>
-        </section>
-
-        {/* 설명 */}
-        <section className="space-y-2">
-          <label className="text-sm font-semibold text-foreground">
-            설명 <span className="text-muted-foreground font-normal">(선택)</span>
-          </label>
-          <textarea
-            placeholder="보트에 대한 상세 설명, 정산 기준 등을 입력하세요."
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            maxLength={500}
-            rows={3}
-            className="w-full rounded-lg border border-border/50 bg-input px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-neon-blue/20 focus:border-neon-blue/50 resize-none"
-          />
-          <p className="text-xs text-muted-foreground text-right">{description.length}/500</p>
-        </section>
-
         {/* 카테고리 */}
         <section className="space-y-3">
           <label className="text-sm font-semibold text-foreground">
@@ -662,6 +631,37 @@ function CreateMarketPageInner() {
               </div>
             </div>
           )}
+        </section>
+
+        {/* 질문 */}
+        <section className="space-y-2">
+          <label className="text-sm font-semibold text-foreground">
+            보트 질문 <span className="text-red-400">*</span>
+          </label>
+          <Input
+            placeholder="예) 비트코인 2026년 내 20만 달러 돌파할까?"
+            value={question}
+            onChange={(e) => setQuestion(e.target.value)}
+            maxLength={100}
+            className="text-base"
+          />
+          <p className="text-xs text-muted-foreground text-right">{question.length}/100</p>
+        </section>
+
+        {/* 설명 */}
+        <section className="space-y-2">
+          <label className="text-sm font-semibold text-foreground">
+            설명 <span className="text-muted-foreground font-normal">(선택)</span>
+          </label>
+          <textarea
+            placeholder="보트에 대한 상세 설명, 정산 기준 등을 입력하세요."
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            maxLength={500}
+            rows={3}
+            className="w-full rounded-lg border border-border/50 bg-input px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-neon-blue/20 focus:border-neon-blue/50 resize-none"
+          />
+          <p className="text-xs text-muted-foreground text-right">{description.length}/500</p>
         </section>
 
         {/* 선택지 */}

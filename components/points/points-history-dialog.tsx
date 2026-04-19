@@ -1,14 +1,21 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ArrowDownLeft,
   ArrowUpRight,
+  CalendarCheck,
   Gift,
-  TrendingUp,
-  Wallet,
-  ShieldAlert,
   Loader2,
+  MessageSquare,
+  PenLine,
+  ShieldAlert,
+  ThumbsUp,
+  TrendingUp,
+  Trophy,
+  Wallet,
+  Zap,
+  Target,
 } from "lucide-react";
 import {
   Dialog,
@@ -18,6 +25,7 @@ import {
 } from "@/components/ui/dialog";
 import { loadPointsHistory, type PointsTransaction } from "@/lib/points";
 import type { DbTransaction } from "@/app/api/pebbles/history/route";
+import { cn } from "@/lib/utils";
 
 interface PointsHistoryDialogProps {
   open: boolean;
@@ -26,7 +34,6 @@ interface PointsHistoryDialogProps {
   currentPoints: number;
 }
 
-// localStorage 타입 ↔ DB 타입 통합 표현
 interface MergedTx {
   id: string;
   date: string;
@@ -36,15 +43,63 @@ interface MergedTx {
   balance: number;
 }
 
-function txIcon(type: string) {
+type TabKey = "all" | "earn" | "spend";
+
+// ── 아이콘 ────────────────────────────────────────────────────────────────────
+
+function txIcon(type: string, description = "") {
+  const desc = description.toLowerCase();
+  if (desc.includes("출석") || desc.includes("daily"))
+    return <CalendarCheck className="size-3.5 text-sky-400" />;
+  if (desc.includes("댓글"))
+    return <MessageSquare className="size-3.5 text-blue-400" />;
+  if (desc.includes("게시글") || desc.includes("작성"))
+    return <PenLine className="size-3.5 text-violet-400" />;
+  if (desc.includes("좋아요"))
+    return <ThumbsUp className="size-3.5 text-pink-400" />;
+  if (desc.includes("당첨") || desc.includes("수령") || desc.includes("bet_win"))
+    return <Trophy className="size-3.5 text-amber-400" />;
+  if (desc.includes("파산") || desc.includes("bankruptcy"))
+    return <Zap className="size-3.5 text-yellow-400" />;
+  if (desc.includes("보트 참여") || desc.includes("베팅"))
+    return <Target className="size-3.5 text-orange-400" />;
+  if (desc.includes("레벨"))
+    return <TrendingUp className="size-3.5 text-chart-5" />;
+
   switch (type) {
-    case "bonus":        return <Gift className="size-3.5 text-amber-400" />;
-    case "vote":         return <ArrowUpRight className="size-3.5 text-red-400" />;
-    case "refund":       return <ArrowDownLeft className="size-3.5 text-blue-400" />;
-    case "reward":       return <TrendingUp className="size-3.5 text-green-400" />;
-    case "admin_grant":  return <Gift className="size-3.5 text-chart-5" />;
-    case "admin_deduct": return <ShieldAlert className="size-3.5 text-orange-500" />;
-    default:             return <Wallet className="size-3.5 text-muted-foreground" />;
+    case "bonus":
+    case "welcome":
+    case "admin_grant":    return <Gift className="size-3.5 text-amber-400" />;
+    case "bet_place":      return <Target className="size-3.5 text-orange-400" />;
+    case "vote":
+    case "spend":          return <ArrowUpRight className="size-3.5 text-red-400" />;
+    case "refund":
+    case "bet_refund":     return <ArrowDownLeft className="size-3.5 text-blue-400" />;
+    case "daily_reward":   return <CalendarCheck className="size-3.5 text-sky-400" />;
+    case "level_up":       return <TrendingUp className="size-3.5 text-chart-5" />;
+    case "reward":
+    case "bet_win":
+    case "creator_fee":    return <Trophy className="size-3.5 text-green-400" />;
+    case "admin_deduct":   return <ShieldAlert className="size-3.5 text-orange-500" />;
+    default:               return <Wallet className="size-3.5 text-muted-foreground" />;
+  }
+}
+
+// 타입별 한국어 라벨
+function txLabel(type: string, description: string): string {
+  if (description) return description;
+  switch (type) {
+    case "daily_reward": return "일일 출석 보상";
+    case "bet_win":      return "보트 당첨 수령";
+    case "bet_place":    return "보트 참여";
+    case "level_up":     return "레벨업";
+    case "creator_fee":  return "창작자 수수료";
+    case "admin_grant":  return "운영자 지급";
+    case "admin_deduct": return "운영자 차감";
+    case "refund":       return "환불";
+    case "reward":       return "페블 획득";
+    case "spend":        return "페블 사용";
+    default:             return type || "페블 변동";
   }
 }
 
@@ -63,7 +118,6 @@ function formatDate(iso: string): string {
   return d.toLocaleDateString("ko-KR", { month: "short", day: "numeric" });
 }
 
-/** localStorage 내역을 MergedTx로 변환 */
 function fromLocalStorage(userId: string): MergedTx[] {
   return loadPointsHistory(userId).map((t: PointsTransaction) => ({
     id: `local_${t.id}`,
@@ -75,7 +129,6 @@ function fromLocalStorage(userId: string): MergedTx[] {
   }));
 }
 
-/** DB 내역을 MergedTx로 변환 */
 function fromDb(rows: DbTransaction[]): MergedTx[] {
   return rows.map((r) => ({
     id: `db_${r.id}`,
@@ -87,6 +140,8 @@ function fromDb(rows: DbTransaction[]): MergedTx[] {
   }));
 }
 
+// ── 메인 컴포넌트 ─────────────────────────────────────────────────────────────
+
 export function PointsHistoryDialog({
   open,
   onOpenChange,
@@ -95,15 +150,14 @@ export function PointsHistoryDialog({
 }: PointsHistoryDialogProps) {
   const [history, setHistory] = useState<MergedTx[]>([]);
   const [dbLoading, setDbLoading] = useState(false);
+  const [tab, setTab] = useState<TabKey>("all");
 
   useEffect(() => {
     if (!open || !userId || userId === "anon") return;
 
-    // localStorage 내역 즉시 표시
     const local = fromLocalStorage(userId);
     setHistory(local);
 
-    // DB 내역 비동기 병합
     setDbLoading(true);
     fetch("/api/pebbles/history", { credentials: "same-origin" })
       .then((r) => r.json())
@@ -111,16 +165,16 @@ export function PointsHistoryDialog({
         if (!j.ok) return;
         const dbRows = fromDb(j.transactions ?? []);
 
-        // 중복 제거: DB id 기반으로 덮어쓰고 localStorage 고유 항목 유지
-        // DB 항목이 더 신뢰도 높으므로 DB 우선, 나머지 localStorage 보완
-        const dbIds = new Set(dbRows.map((r) => r.id));
-        const localOnly = local.filter((r) => {
-          // DB에 admin_grant/admin_deduct 가 있으면 local에서 같은 유형 제거
-          return true; // 날짜 기반 중복 제거는 안 하고 단순 합산 (DB가 공식 기록)
-          void dbIds;
+        // DB에 있는 항목과 시간(±10초) + amount 동일한 localStorage 항목 중복 제거
+        const localOnly = local.filter((loc) => {
+          const locTime = Date.parse(loc.date);
+          return !dbRows.some(
+            (db) =>
+              db.amount === loc.amount &&
+              Math.abs(Date.parse(db.date) - locTime) < 10_000,
+          );
         });
 
-        // DB 항목 + localStorage 항목 합산 후 날짜 내림차순 정렬
         const merged = [...dbRows, ...localOnly].sort(
           (a, b) => Date.parse(b.date) - Date.parse(a.date),
         );
@@ -130,8 +184,29 @@ export function PointsHistoryDialog({
       .finally(() => setDbLoading(false));
   }, [open, userId]);
 
-  const earned = history.filter((t) => t.amount > 0).reduce((s, t) => s + t.amount, 0);
-  const spent  = history.filter((t) => t.amount < 0).reduce((s, t) => s + Math.abs(t.amount), 0);
+  const earned = useMemo(
+    () => history.filter((t) => t.amount > 0).reduce((s, t) => s + t.amount, 0),
+    [history],
+  );
+  const spent = useMemo(
+    () => history.filter((t) => t.amount < 0).reduce((s, t) => s + Math.abs(t.amount), 0),
+    [history],
+  );
+
+  const filtered = useMemo(() => {
+    if (tab === "earn")  return history.filter((t) => t.amount > 0);
+    if (tab === "spend") return history.filter((t) => t.amount < 0);
+    return history;
+  }, [history, tab]);
+
+  const earnCount  = history.filter((t) => t.amount > 0).length;
+  const spendCount = history.filter((t) => t.amount < 0).length;
+
+  const tabs: { key: TabKey; label: string; count: number }[] = [
+    { key: "all",   label: "전체",  count: history.length },
+    { key: "earn",  label: "획득",  count: earnCount },
+    { key: "spend", label: "사용",  count: spendCount },
+  ];
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -145,74 +220,129 @@ export function PointsHistoryDialog({
         </DialogHeader>
 
         {/* 잔액 요약 */}
-        <div className="px-6 py-4 bg-chart-5/5 border-b border-border/30">
-          <div className="flex items-end justify-between">
+        <div className="px-5 py-4 bg-chart-5/5 border-b border-border/30">
+          <div className="flex items-center justify-between mb-3">
             <div>
-              <p className="text-xs text-muted-foreground mb-1">현재 보유 페블</p>
-              <p className="text-2xl font-bold text-chart-5">
+              <p className="text-[11px] text-muted-foreground mb-0.5">현재 보유</p>
+              <p className="text-2xl font-bold text-chart-5 tabular-nums">
                 {currentPoints.toLocaleString()}
                 <span className="text-sm font-normal text-muted-foreground ml-1">P</span>
               </p>
             </div>
-            <div className="text-right space-y-1">
-              <div className="flex items-center gap-1.5 justify-end">
-                <ArrowDownLeft className="size-3 text-green-400" />
-                <span className="text-xs text-muted-foreground">획득</span>
-                <span className="text-xs font-semibold text-green-400">+{earned.toLocaleString()} P</span>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div className="rounded-lg bg-emerald-500/10 border border-emerald-500/20 px-3 py-2">
+              <div className="flex items-center gap-1 mb-0.5">
+                <ArrowDownLeft className="size-3 text-emerald-400" />
+                <span className="text-[11px] text-muted-foreground">총 획득</span>
               </div>
-              <div className="flex items-center gap-1.5 justify-end">
-                <ArrowUpRight className="size-3 text-red-400" />
-                <span className="text-xs text-muted-foreground">사용</span>
-                <span className="text-xs font-semibold text-red-400">-{spent.toLocaleString()} P</span>
+              <p className="text-sm font-bold text-emerald-400 tabular-nums">+{earned.toLocaleString()} P</p>
+            </div>
+            <div className="rounded-lg bg-rose-500/10 border border-rose-500/20 px-3 py-2">
+              <div className="flex items-center gap-1 mb-0.5">
+                <ArrowUpRight className="size-3 text-rose-400" />
+                <span className="text-[11px] text-muted-foreground">총 사용</span>
               </div>
+              <p className="text-sm font-bold text-rose-400 tabular-nums">-{spent.toLocaleString()} P</p>
             </div>
           </div>
         </div>
 
-        {/* 거래 내역 */}
-        <div className="max-h-80 overflow-y-auto">
-          {history.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-12 gap-3 text-muted-foreground">
-              <Wallet className="size-8 opacity-30" />
-              <p className="text-sm">{dbLoading ? "불러오는 중…" : "페블 내역이 없습니다"}</p>
+        {/* 탭 */}
+        <div className="flex border-b border-border/40 bg-secondary/10">
+          {tabs.map(({ key, label, count }) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setTab(key)}
+              className={cn(
+                "flex-1 py-2.5 text-xs font-semibold transition-colors relative",
+                tab === key
+                  ? "text-chart-5"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {label}
+              {count > 0 && (
+                <span className={cn(
+                  "ml-1 text-[10px] px-1 rounded-full tabular-nums",
+                  tab === key
+                    ? "bg-chart-5/20 text-chart-5"
+                    : "bg-secondary text-muted-foreground",
+                )}>
+                  {count}
+                </span>
+              )}
+              {tab === key && (
+                <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-chart-5 rounded-t-full" />
+              )}
+            </button>
+          ))}
+        </div>
+
+        {/* 거래 목록 */}
+        <div className="max-h-72 overflow-y-auto">
+          {filtered.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-10 gap-2 text-muted-foreground">
+              <Wallet className="size-7 opacity-25" />
+              <p className="text-sm">
+                {dbLoading
+                  ? "불러오는 중…"
+                  : tab === "earn"
+                    ? "획득 내역이 없습니다"
+                    : tab === "spend"
+                      ? "사용 내역이 없습니다"
+                      : "페블 내역이 없습니다"}
+              </p>
             </div>
           ) : (
-            <ul className="divide-y divide-border/30">
-              {history.map((tx) => (
-                <li
-                  key={tx.id}
-                  className="flex items-center gap-3 px-6 py-3 hover:bg-secondary/30 transition-colors"
-                >
-                  <div className="shrink-0 size-7 rounded-full bg-secondary/60 flex items-center justify-center">
-                    {txIcon(tx.type)}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-foreground truncate">{tx.description}</p>
-                    <p className="text-xs text-muted-foreground">{formatDate(tx.date)}</p>
-                  </div>
-                  <div className="shrink-0 text-right">
-                    <p className={`text-sm font-bold ${tx.amount > 0 ? "text-green-400" : "text-red-400"}`}>
-                      {tx.amount > 0 ? "+" : ""}{tx.amount.toLocaleString()} P
-                    </p>
-                    <p className="text-xs text-muted-foreground">{tx.balance.toLocaleString()} P</p>
-                  </div>
-                </li>
-              ))}
+            <ul className="divide-y divide-border/20">
+              {filtered.map((tx) => {
+                const isEarn = tx.amount > 0;
+                return (
+                  <li
+                    key={tx.id}
+                    className="flex items-center gap-3 px-5 py-3 hover:bg-secondary/20 transition-colors"
+                  >
+                    {/* 아이콘 */}
+                    <div className={cn(
+                      "shrink-0 size-7 rounded-full flex items-center justify-center",
+                      isEarn ? "bg-emerald-500/10" : "bg-rose-500/10",
+                    )}>
+                      {txIcon(tx.type, tx.description)}
+                    </div>
+
+                    {/* 설명 + 날짜 */}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-foreground truncate leading-snug">
+                        {txLabel(tx.type, tx.description)}
+                      </p>
+                      <p className="text-[11px] text-muted-foreground mt-0.5">{formatDate(tx.date)}</p>
+                    </div>
+
+                    {/* 금액 + 잔액 */}
+                    <div className="shrink-0 text-right">
+                      <p className={cn(
+                        "text-sm font-bold tabular-nums",
+                        isEarn ? "text-emerald-400" : "text-rose-400",
+                      )}>
+                        {isEarn ? "+" : ""}{tx.amount.toLocaleString()} P
+                      </p>
+                      <p className="text-[11px] text-muted-foreground tabular-nums">
+                        {tx.balance.toLocaleString()} P
+                      </p>
+                    </div>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </div>
 
-        {/* 페블 적립 안내 */}
-        <div className="px-6 py-3 border-t border-border/30 bg-secondary/20">
-          <p className="text-[11px] text-muted-foreground text-center">
-            게시글 작성·댓글·보트 참여 시 페블을 획득할 수 있어요
-          </p>
-        </div>
-
-        {/* 면책 안내문 */}
-        <div className="px-5 py-4 border-t border-border/40 bg-amber-500/5">
-          <p className="text-[10px] text-muted-foreground leading-relaxed">
-            ⚠️ 본 사이트의 모든 <strong className="text-foreground">&#39;페블(포인트)&#39;</strong>은 사이트 내에서만 사용되는 가상 재화이며, 어떠한 경우에도 현금, 상품권, 혹은 실제 가치를 지닌 물품으로 교환(환전)될 수 없습니다. 본 사이트는 사행성을 조장하지 않는 순수 통계 및 커뮤니티 목적의 플랫폼입니다.
+        {/* 하단 면책 */}
+        <div className="px-5 py-3 border-t border-border/30 bg-secondary/10">
+          <p className="text-[10px] text-muted-foreground leading-relaxed text-center">
+            ⚠️ 페블은 사이트 내 가상 재화로, 현금·상품권 등 실제 가치와 교환될 수 없습니다.
           </p>
         </div>
       </DialogContent>

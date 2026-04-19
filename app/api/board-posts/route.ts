@@ -3,6 +3,7 @@ import { createClient } from "@/utils/supabase/server";
 import { createServiceRoleClient } from "@/utils/supabase/service-role";
 import type { BoardCategoryId, BoardPost } from "@/lib/board";
 import { checkUserModeration } from "@/lib/moderation-check";
+import { isAdminEmail } from "@/lib/admin";
 
 const LIMIT_DEFAULT = 20;
 
@@ -351,12 +352,15 @@ export async function DELETE(request: Request) {
     }
 
     const supabase = createServiceRoleClient();
+    const isAdmin = isAdminEmail(user.email);
 
-    const { error } = await supabase
-      .from("board_posts")
-      .delete()
-      .eq("id", postId)
-      .eq("author_id", user.id);
+    // 운영진은 모든 게시글 삭제 가능, 일반 유저는 본인 글만
+    const query = supabase.from("board_posts").delete().eq("id", postId);
+    if (!isAdmin) {
+      query.eq("author_id", user.id);
+    }
+
+    const { error } = await query;
 
     if (error) {
       console.error("[board-posts DELETE]", error);

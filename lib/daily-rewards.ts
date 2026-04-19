@@ -2,11 +2,11 @@
 
 /**
  * 일일 보상 시스템
- * - 하루 기준: 한국시간(KST, UTC+9) 오전 07:00 리셋
+ * - 하루 기준: 한국시간(KST, UTC+9) 자정(00:00) 리셋
  *
  * 보상 규칙
  * ─────────────────────────────────────────
- * 출석               500 P / 일
+ * 출석               레벨 기반 P / 일  ← 서버 /api/pebbles/daily-reward 에서 처리
  * 첫 게시글 작성      500 P / 일
  * 댓글 작성          100 P / 건 (하루 최대 500 P)
  * 좋아요 10개 당      100 P (내가 쓴 글 기준, 누적)
@@ -16,22 +16,18 @@
 
 import { earnUserPoints } from "@/lib/points";
 
-// ─── KST 기반 날짜 키 ─────────────────────────────────────────────────────────
+// ─── KST 기반 날짜 키 (자정 00:00 리셋) ──────────────────────────────────────
 
 export function getKSTDay(): string {
   const now = new Date();
   const kstMs = now.getTime() + 9 * 60 * 60 * 1000;
   const kst = new Date(kstMs);
-  if (kst.getUTCHours() < 7) {
-    kst.setUTCDate(kst.getUTCDate() - 1);
-  }
   return kst.toISOString().slice(0, 10);
 }
 
 // ─── 일일 기록 ────────────────────────────────────────────────────────────────
 
 interface DailyRecord {
-  attended: boolean;
   firstPost: boolean;
   commentPoints: number;
 }
@@ -40,32 +36,19 @@ const DAILY_KEY = (uid: string, day: string) => `voters.daily.${uid}.${day}`;
 const LIKE_KEY = "voters.likes.rewards.v1";
 
 function loadDaily(userId: string): DailyRecord {
-  if (typeof window === "undefined") return { attended: false, firstPost: false, commentPoints: 0 };
+  if (typeof window === "undefined") return { firstPost: false, commentPoints: 0 };
   const raw = window.localStorage.getItem(DAILY_KEY(userId, getKSTDay()));
-  if (!raw) return { attended: false, firstPost: false, commentPoints: 0 };
+  if (!raw) return { firstPost: false, commentPoints: 0 };
   try {
     return JSON.parse(raw) as DailyRecord;
   } catch {
-    return { attended: false, firstPost: false, commentPoints: 0 };
+    return { firstPost: false, commentPoints: 0 };
   }
 }
 
 function saveDaily(userId: string, record: DailyRecord): void {
   if (typeof window === "undefined") return;
   window.localStorage.setItem(DAILY_KEY(userId, getKSTDay()), JSON.stringify(record));
-}
-
-// ─── 출석 보상 ────────────────────────────────────────────────────────────────
-
-/** 오늘 아직 출석 보상을 받지 않은 경우 500P 지급. */
-export async function checkAndGrantAttendance(userId: string): Promise<boolean> {
-  if (!userId || userId === "anon") return false;
-  const rec = loadDaily(userId);
-  if (rec.attended) return false;
-  rec.attended = true;
-  saveDaily(userId, rec);
-  await earnUserPoints(userId, 500, "📅 출석 보너스");
-  return true;
 }
 
 // ─── 첫 게시글 보상 ───────────────────────────────────────────────────────────
@@ -134,7 +117,6 @@ export async function checkAndGrantLikeReward(
 
 export interface DailyStatus {
   day: string;
-  attended: boolean;
   firstPost: boolean;
   commentPoints: number;
   commentRemaining: number;
@@ -144,7 +126,6 @@ export function getDailyStatus(userId: string): DailyStatus {
   const rec = loadDaily(userId);
   return {
     day: getKSTDay(),
-    attended: rec.attended,
     firstPost: rec.firstPost,
     commentPoints: rec.commentPoints,
     commentRemaining: Math.floor((500 - rec.commentPoints) / 100),

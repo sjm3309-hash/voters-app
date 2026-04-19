@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/utils/supabase/server";
+import { createServiceRoleClient } from "@/utils/supabase/service-role";
 import { isAdminEmail } from "@/lib/admin";
 import { ADMIN_BALANCE } from "@/lib/points-constants";
 import { adjustPebblesAtomic } from "@/lib/pebbles-db";
@@ -7,7 +8,14 @@ import { adjustPebblesAtomic } from "@/lib/pebbles-db";
 type Body = {
   delta?: number;
   description?: string;
+  type?: string;
 };
+
+/** delta 부호와 description으로 거래 유형 추론 */
+function inferType(delta: number, bodyType?: string): string {
+  if (bodyType) return bodyType;
+  return delta > 0 ? "reward" : "spend";
+}
 
 export async function POST(request: Request) {
   try {
@@ -30,6 +38,7 @@ export async function POST(request: Request) {
 
     const body = (await request.json().catch(() => null)) as Partial<Body> | null;
     const delta = Number(body?.delta);
+    const description = typeof body?.description === "string" ? body.description : "페블 변동";
 
     if (!Number.isFinite(delta) || Math.trunc(delta) !== delta || delta === 0) {
       return NextResponse.json({ ok: false, error: "invalid_delta" }, { status: 400 });
@@ -49,6 +58,16 @@ export async function POST(request: Request) {
         { status: 500 },
       );
     }
+
+    // pebble_transactions 기록 (fire-and-forget)
+    const svc = createServiceRoleClient();
+    void svc.from("pebble_transactions").insert({
+      user_id: user.id,
+      amount: delta,
+      balance_after: result.balance,
+      type: inferType(delta, body?.type),
+      description,
+    });
 
     return NextResponse.json({
       ok: true,

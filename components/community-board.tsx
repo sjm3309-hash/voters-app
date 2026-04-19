@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Clock, Eye, Flame, ThumbsUp, Loader2, MessageSquare, PenLine, Tag } from "lucide-react";
+import { Clock, Eye, Flame, ThumbsUp, Loader2, MessageSquare, PenLine, Tag, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { FilterId } from "@/components/category-filter";
 import {
@@ -21,6 +21,8 @@ import { getLikeCount, hasLiked, toggleLike } from "@/lib/likes";
 import { AuthorLevelIcon } from "@/components/level-icon";
 import { AdminAuthorBadge } from "@/components/admin-author-badge";
 import { isAdminUserId } from "@/lib/admin";
+import { useUserPointsBalance } from "@/lib/points";
+import { toast } from "sonner";
 import { BoardPagination } from "@/components/board-pagination";
 import {
   Select,
@@ -79,9 +81,13 @@ function toDate(createdAt: string) {
 function PostItem({
   post,
   onClick,
+  isAdmin,
+  onAdminDelete,
 }: {
   post: BoardPost;
   onClick?: () => void;
+  isAdmin?: boolean;
+  onAdminDelete?: (postId: string) => void;
 }) {
   const thumb = post.thumbnail || post.images?.[0];
   const userId = loadAuthUser()?.name?.trim() || "anon";
@@ -110,11 +116,26 @@ function PostItem({
   const comments = post.commentCount ?? 0;
 
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="group w-full border-b border-gray-100 bg-background text-left transition-colors last:border-b-0 hover:bg-gray-50/80 dark:border-border/40 dark:bg-background dark:hover:bg-muted/25"
-    >
+    <div className="group relative w-full border-b border-gray-100 bg-background last:border-b-0 dark:border-border/40">
+      {isAdmin && onAdminDelete && (
+        <button
+          type="button"
+          aria-label="운영진 삭제"
+          title="운영진 삭제"
+          onClick={(e) => {
+            e.stopPropagation();
+            onAdminDelete(post.id);
+          }}
+          className="absolute right-2 top-1/2 z-10 -translate-y-1/2 hidden group-hover:flex items-center justify-center size-6 rounded-md text-destructive hover:bg-destructive/10 transition-colors"
+        >
+          <Trash2 className="size-3.5" />
+        </button>
+      )}
+      <button
+        type="button"
+        onClick={onClick}
+        className="w-full text-left transition-colors hover:bg-gray-50/80 dark:bg-background dark:hover:bg-muted/25"
+      >
       <div className="flex items-start gap-1.5 px-2.5 py-[0.64rem] sm:gap-2 sm:px-4">
         <div className="size-7 shrink-0 overflow-hidden rounded-md bg-secondary sm:size-8">
           {thumb ? (
@@ -209,7 +230,8 @@ function PostItem({
           </div>
         </div>
       </div>
-    </button>
+      </button>
+    </div>
   );
 }
 
@@ -222,6 +244,30 @@ export function CommunityBoard({
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+
+  const { userId: currentUserId } = useUserPointsBalance();
+  const isAdmin = isAdminUserId(currentUserId);
+
+  const handleAdminDelete = useCallback(async (postId: string) => {
+    const ok = window.confirm("[운영진] 이 게시글을 삭제하시겠습니까?");
+    if (!ok) return;
+    try {
+      const res = await fetch(`/api/board-posts?id=${encodeURIComponent(postId)}`, {
+        method: "DELETE",
+        credentials: "same-origin",
+      });
+      const json = await res.json();
+      if (!res.ok || !json.ok) {
+        toast.error("게시글 삭제에 실패했습니다.");
+        return;
+      }
+      toast.success("게시글이 삭제되었습니다.");
+      setRefreshTick((t) => t + 1);
+      setRemotePosts((prev) => prev.filter((p) => p.id !== postId));
+    } catch {
+      toast.error("게시글 삭제 중 오류가 발생했습니다.");
+    }
+  }, []);
 
   const pageFromUrl = useMemo(() => {
     const raw = searchParams.get("page");
@@ -677,6 +723,8 @@ export function CommunityBoard({
                   p.set("next", listReturnUrl);
                   router.push(`/board/${post.id}?${p.toString()}`);
                 }}
+                isAdmin={isAdmin}
+                onAdminDelete={isAdmin ? handleAdminDelete : undefined}
               />
             ))}
           </div>

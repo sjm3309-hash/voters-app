@@ -225,7 +225,45 @@ export function LevelProgress({ level, points, className }: LevelProgressProps) 
 }
 
 // ─── 작성자 이름 기반 레벨 아이콘 ────────────────────────────────────────────
-// 게시글/댓글의 작성자 표시명을 받아 캐시에서 포인트를 조회해 아이콘을 표시합니다.
+// 게시글/댓글의 작성자 표시명을 받아 서버에서 레벨을 조회해 아이콘을 표시합니다.
+// - localStorage 캐시를 즉시 표시 (깜빡임 없음)
+// - 5분 TTL로 서버에서 최신 레벨을 가져와 갱신 (레벨업 실시간 반영)
+// - 동일 닉네임에 대한 중복 요청은 하나로 합침
+
+/** 인메모리 레벨 캐시 (TTL: 5분) */
+const LEVEL_FETCH_TTL = 5 * 60 * 1000;
+const levelMemCache = new Map<string, { level: number; ts: number }>();
+const levelFetchPromises = new Map<string, Promise<number | null>>();
+
+function fetchAuthorLevel(name: string): Promise<number | null> {
+  const cached = levelMemCache.get(name);
+  if (cached && Date.now() - cached.ts < LEVEL_FETCH_TTL) {
+    return Promise.resolve(cached.level);
+  }
+
+  const inFlight = levelFetchPromises.get(name);
+  if (inFlight) return inFlight;
+
+  const promise = fetch(`/api/user/level?name=${encodeURIComponent(name)}`, {
+    cache: "no-store",
+  })
+    .then((r) => r.json() as Promise<{ ok?: boolean; level?: number }>)
+    .then((j) => {
+      if (j.ok && typeof j.level === "number") {
+        levelMemCache.set(name, { level: j.level, ts: Date.now() });
+        cacheAuthorManualLevel(name, j.level);
+        return j.level;
+      }
+      return null;
+    })
+    .catch(() => null)
+    .finally(() => {
+      levelFetchPromises.delete(name);
+    });
+
+  levelFetchPromises.set(name, promise);
+  return promise;
+}
 
 interface AuthorLevelIconProps {
   /** 게시글/댓글 작성자 display name */
@@ -235,12 +273,21 @@ interface AuthorLevelIconProps {
 }
 
 export function AuthorLevelIcon({ name, size = 14, className }: AuthorLevelIconProps) {
-  const [manualLevel, setManualLevel] = useState<number | null>(null);
-  const [points, setPoints] = useState<number>(0);
+  const [manualLevel, setManualLevel] = useState<number | null>(() =>
+    typeof window !== "undefined" ? getCachedAuthorManualLevel(name) : null
+  );
+  const [points, setPoints] = useState<number>(() =>
+    typeof window !== "undefined" ? getCachedAuthorPoints(name) : 0
+  );
 
   useEffect(() => {
     setManualLevel(getCachedAuthorManualLevel(name));
     setPoints(getCachedAuthorPoints(name));
+
+    // 서버에서 최신 레벨 조회 (TTL 캐시 + 중복 제거)
+    void fetchAuthorLevel(name).then((level) => {
+      if (level !== null) setManualLevel(level);
+    });
 
     const onUpdate = () => {
       setManualLevel(getCachedAuthorManualLevel(name));
@@ -254,7 +301,6 @@ export function AuthorLevelIcon({ name, size = 14, className }: AuthorLevelIconP
     };
   }, [name]);
 
-  // 수동 레벨 캐시가 있으면 우선 사용, 없으면 포인트 기반 폴백
   if (manualLevel !== null) {
     return <LevelIcon level={manualLevel} size={size} className={className} />;
   }

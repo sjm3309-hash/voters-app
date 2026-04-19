@@ -7,6 +7,8 @@ export type AdminUsersApiRow = {
   createdAt: string | null;
   /** profiles.pebbles — 프로필 없으면 0 (운영자 이메일은 고정 잔액) */
   pebbles: number;
+  /** profiles.level — 프로필 없으면 1 */
+  level: number;
   profileMissing: boolean;
   isAdminEmail: boolean;
 };

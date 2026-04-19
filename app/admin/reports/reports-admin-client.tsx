@@ -13,6 +13,8 @@ import {
   RefreshCw,
   Trash2,
   XCircle,
+  FileText,
+  MessageSquare,
 } from "lucide-react";
 import { Navbar } from "@/components/navbar";
 import { Button } from "@/components/ui/button";
@@ -22,6 +24,7 @@ import { useIsAdmin } from "@/hooks/use-is-admin";
 import { cn } from "@/lib/utils";
 import { REPORT_REASONS } from "@/lib/reports-config";
 import type { ReportTargetType } from "@/lib/reports-config";
+import type { ReportedContent } from "@/app/api/admin/reports/content/route";
 
 type ReportRow = {
   id: string;
@@ -67,6 +70,64 @@ function ReasonLabel({ reason }: { reason: string }) {
   return <span>{found ? found.label : reason}</span>;
 }
 
+/** 신고 대상 내용 미리보기 */
+function ReportedContentPreview({ content, loading }: { content: ReportedContent | null; loading: boolean }) {
+  if (loading) {
+    return (
+      <div className="flex items-center gap-2 text-xs text-muted-foreground py-2">
+        <Loader2 className="size-3.5 animate-spin" /> 내용 불러오는 중...
+      </div>
+    );
+  }
+  if (!content) {
+    return (
+      <p className="text-xs text-muted-foreground italic py-1">
+        (원본 내용을 불러올 수 없습니다 — 삭제되었거나 ID가 변경되었을 수 있습니다)
+      </p>
+    );
+  }
+
+  const isComment = content.targetType === "boat_comment" || content.targetType === "board_comment";
+
+  return (
+    <div className="rounded-lg border border-border/50 bg-secondary/20 p-3 space-y-1.5">
+      <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground font-medium">
+        {isComment
+          ? <MessageSquare className="size-3" />
+          : <FileText className="size-3" />}
+        <span>신고된 {isComment ? "댓글" : "내용"}</span>
+        {content.author && (
+          <>
+            <span className="text-muted-foreground/40">·</span>
+            <span>작성자: <strong className="text-foreground">{content.author}</strong></span>
+          </>
+        )}
+      </div>
+      {content.title && (
+        <p className="text-sm font-semibold text-foreground leading-snug line-clamp-2">
+          {content.title}
+        </p>
+      )}
+      {content.body && (
+        <p className="text-xs text-foreground/80 leading-relaxed line-clamp-4 whitespace-pre-wrap break-words">
+          {content.body}
+        </p>
+      )}
+      {content.link && (
+        <a
+          href={content.link}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center gap-1 text-[11px] text-chart-5 hover:underline mt-0.5"
+        >
+          <ExternalLink className="size-3" />
+          {content.parentId ? "원본 보트/게시글로 이동" : "원본으로 이동"}
+        </a>
+      )}
+    </div>
+  );
+}
+
 function ReportCard({
   report,
   onStatusChange,
@@ -78,6 +139,25 @@ function ReportCard({
 }) {
   const [expanded, setExpanded] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [contentLoading, setContentLoading] = useState(false);
+  const [reportedContent, setReportedContent] = useState<ReportedContent | null | "not_found">(null);
+
+  // 펼칠 때 신고 대상 내용 조회
+  useEffect(() => {
+    if (!expanded || reportedContent !== null) return;
+    setContentLoading(true);
+    fetch(
+      `/api/admin/reports/content?targetType=${encodeURIComponent(report.target_type)}&targetId=${encodeURIComponent(report.target_id)}`,
+      { credentials: "same-origin" },
+    )
+      .then((r) => r.json())
+      .then((j: { ok?: boolean; content?: ReportedContent }) => {
+        if (j.ok && j.content) setReportedContent(j.content);
+        else setReportedContent("not_found");
+      })
+      .catch(() => setReportedContent("not_found"))
+      .finally(() => setContentLoading(false));
+  }, [expanded, report.target_type, report.target_id, reportedContent]);
 
   const handleStatus = async (status: ReportRow["status"]) => {
     setLoading(true);
@@ -85,7 +165,7 @@ function ReportCard({
     setLoading(false);
   };
 
-  const link = TARGET_LINK[report.target_type]?.(report.target_id);
+  const resolvedContent = reportedContent === "not_found" ? null : reportedContent;
 
   return (
     <div className={cn(
@@ -117,19 +197,18 @@ function ReportCard({
 
       {expanded && (
         <div className="px-4 pb-4 border-t border-border/40 pt-3 space-y-3">
+
+          {/* 신고 대상 실제 내용 */}
+          <ReportedContentPreview content={resolvedContent} loading={contentLoading} />
+
           <div className="text-xs text-muted-foreground space-y-1">
             <div>
               <span className="font-semibold">대상 ID: </span>
-              <code className="text-[11px] bg-secondary/30 px-1 rounded">{report.target_id}</code>
-              {link !== "#" && (
-                <a href={link} target="_blank" rel="noreferrer" className="ml-2 text-chart-5 hover:underline inline-flex items-center gap-0.5">
-                  <ExternalLink className="size-3" /> 바로가기
-                </a>
-              )}
+              <code className="text-[11px] bg-secondary/30 px-1 rounded break-all">{report.target_id}</code>
             </div>
             {report.detail && (
               <div>
-                <span className="font-semibold">추가 내용: </span>
+                <span className="font-semibold">신고 추가 내용: </span>
                 <span className="text-foreground">{report.detail}</span>
               </div>
             )}

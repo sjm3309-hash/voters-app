@@ -66,6 +66,11 @@ function DbUserRow({
   const [activityOpen, setActivityOpen] = useState(false);
   const [modPanelOpen, setModPanelOpen] = useState(false);
   const [pebbleHistoryOpen, setPebbleHistoryOpen] = useState(false);
+  const [levelOpen, setLevelOpen] = useState(false);
+  const [newLevel, setNewLevel] = useState(String(level));
+  const [resetDate, setResetDate] = useState(true);
+  const [levelMsg, setLevelMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [levelSaving, setLevelSaving] = useState(false);
 
   const handleGrant = async () => {
     const n = parseInt(amount, 10);
@@ -89,6 +94,39 @@ function DbUserRow({
       }, 1500);
     } else {
       setMsg({ ok: false, text: describeAdminGrantError(g.error) });
+    }
+  };
+
+  const handleSetLevel = async () => {
+    const n = parseInt(newLevel, 10);
+    if (!n || n < 1 || n > 56) {
+      setLevelMsg({ ok: false, text: "1~56 사이 정수를 입력하세요" });
+      return;
+    }
+    setLevelSaving(true);
+    setLevelMsg(null);
+    try {
+      const res = await fetch(`/api/admin/users/${encodeURIComponent(entry.id)}/set-level`, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ level: n, resetRewardDate: resetDate }),
+      });
+      const j = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      if (res.ok && j.ok) {
+        setLevelMsg({ ok: true, text: `Lv.${n} 설정 완료${resetDate ? " · 출석 보상 초기화" : ""}` });
+        onGrantDone();
+        setTimeout(() => {
+          setLevelOpen(false);
+          setLevelMsg(null);
+        }, 1500);
+      } else {
+        setLevelMsg({ ok: false, text: j.error ?? "오류가 발생했습니다" });
+      }
+    } catch {
+      setLevelMsg({ ok: false, text: "네트워크 오류" });
+    } finally {
+      setLevelSaving(false);
     }
   };
 
@@ -254,6 +292,82 @@ function DbUserRow({
             </Popover>
           )}
         </td>
+        {/* 레벨 조정 */}
+        <td className="px-2 py-1 text-right whitespace-nowrap align-middle">
+          {!entry.isAdminEmail && (
+            <Popover
+              open={levelOpen}
+              onOpenChange={(next) => {
+                setLevelOpen(next);
+                if (next) setNewLevel(String(level));
+                if (!next) setLevelMsg(null);
+              }}
+            >
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  className="text-[11px] px-1.5 py-0.5 rounded-md bg-amber-500/10 text-amber-600 border border-amber-500/20 hover:bg-amber-500/20 transition-colors leading-none dark:text-amber-400"
+                >
+                  레벨
+                </button>
+              </PopoverTrigger>
+              <PopoverContent
+                align="end"
+                side="bottom"
+                sideOffset={6}
+                className="w-auto max-w-[min(92vw,400px)] p-3"
+              >
+                <div className="flex flex-col gap-2">
+                  <p className="text-[11px] text-muted-foreground">
+                    <span className="font-medium text-foreground">{entry.displayName}</span>
+                    <span> · 현재 Lv.{level}</span>
+                  </p>
+                  <div className="flex flex-row flex-nowrap items-center gap-2">
+                    <Input
+                      type="number"
+                      placeholder="레벨 (1~56)"
+                      value={newLevel}
+                      onChange={(e) => setNewLevel(e.target.value)}
+                      className="h-8 w-[100px] shrink-0 text-xs"
+                      min={1}
+                      max={56}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => void handleSetLevel()}
+                      disabled={levelSaving}
+                      className="h-8 shrink-0 px-3 rounded-md text-xs font-semibold bg-amber-500 text-white hover:opacity-90 disabled:opacity-50 transition-opacity inline-flex items-center gap-1"
+                    >
+                      <Check className="size-3" /> 설정
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setLevelOpen(false); setLevelMsg(null); }}
+                      className="h-8 shrink-0 px-2 rounded-md text-xs text-muted-foreground hover:bg-secondary transition-colors inline-flex items-center justify-center"
+                      aria-label="닫기"
+                    >
+                      <X className="size-3.5" />
+                    </button>
+                  </div>
+                  <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={resetDate}
+                      onChange={(e) => setResetDate(e.target.checked)}
+                      className="size-3 rounded"
+                    />
+                    출석 보상 날짜 초기화 (오늘 보상 다시 수령 가능)
+                  </label>
+                  {levelMsg && (
+                    <p className={cn("text-xs leading-snug", levelMsg.ok ? "text-green-400" : "text-red-400")}>
+                      {levelMsg.text}
+                    </p>
+                  )}
+                </div>
+              </PopoverContent>
+            </Popover>
+          )}
+        </td>
         <td className="px-2 py-1 text-center whitespace-nowrap align-middle">
           <button
             type="button"
@@ -286,7 +400,7 @@ function DbUserRow({
       {/* DB 제재 패널 확장 행 */}
       {modPanelOpen && !entry.isAdminEmail && (
         <tr className="border-b border-border/30 bg-secondary/5">
-          <td colSpan={10} className="px-4 py-3">
+          <td colSpan={11} className="px-4 py-3">
             <UserModerationPanel
               userId={entry.id}
               displayName={entry.displayName}
@@ -512,6 +626,9 @@ export function AdminUsersClient() {
                       <th className="px-2 py-1.5 text-[10px] font-semibold text-muted-foreground text-right w-14 whitespace-nowrap">
                         지급
                       </th>
+                      <th className="px-2 py-1.5 text-[10px] font-semibold text-muted-foreground text-right w-14 whitespace-nowrap">
+                        레벨
+                      </th>
                       <th className="px-2 py-1.5 text-[10px] font-semibold text-muted-foreground text-center w-12 whitespace-nowrap">
                         활동
                       </th>
@@ -522,7 +639,7 @@ export function AdminUsersClient() {
                   </thead>
                   <tbody>
                     {rows.map((entry, i) => {
-                      const level = Math.max(1, Math.min(56, getUserManualLevel(entry.id)));
+                      const level = entry.level ?? Math.max(1, Math.min(56, getUserManualLevel(entry.id)));
                       const levelUpSpent = TIER_THRESHOLDS[level - 1] ?? 0;
                       const totalWealth = entry.isAdminEmail
                         ? entry.pebbles
