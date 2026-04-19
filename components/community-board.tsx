@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Clock, Eye, Flame, ThumbsUp, Loader2, MessageSquare, PenLine, Tag, Trash2 } from "lucide-react";
+import { Clock, Eye, Flame, ThumbsUp, MessageSquare, PenLine, Tag, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { FilterId } from "@/components/category-filter";
 import {
@@ -32,7 +32,7 @@ import {
 } from "@/components/ui/select";
 import { getBoardMainTitle, getBoardSubTabLine } from "@/lib/board-tab-labels";
 
-const PAGE_SIZE = 10;
+const PAGE_SIZE = 20;
 
 interface CommunityBoardProps {
   activeFilter?: FilterId;
@@ -476,7 +476,9 @@ export function CommunityBoard({
 
         const res = await fetch(`/api/board-posts?${params.toString()}`, {
           credentials: "same-origin",
-          cache: "no-store",
+          // API에 s-maxage=20 캐시 헤더가 있으므로 "default"로 CDN/브라우저 캐시 활용
+          // (새 글 작성·refreshTick 경로는 별도로 cache:"no-store" 사용)
+          cache: combinedSearch.length > 0 ? "no-store" : "default",
         });
         const j = (await res.json().catch(() => ({}))) as {
           ok?: boolean;
@@ -626,6 +628,28 @@ export function CommunityBoard({
 
   const showSpinner = !initialFetchDone || remoteLoading;
 
+  // ── 스켈레톤 아이템 — PostItem과 동일한 레이아웃 ──────────────────────────
+  function PostSkeleton() {
+    return (
+      <div className="w-full border-b border-gray-100 dark:border-border/40 last:border-b-0">
+        <div className="flex items-start gap-1.5 px-2.5 py-[0.64rem] sm:gap-2 sm:px-4">
+          {/* 썸네일 */}
+          <div className="size-7 sm:size-8 shrink-0 rounded-md bg-gray-200 dark:bg-muted animate-pulse" />
+          <div className="min-w-0 flex-1 space-y-1.5">
+            {/* 제목 */}
+            <div className="h-4 w-3/4 rounded bg-gray-200 dark:bg-muted animate-pulse" />
+            {/* 메타 정보 */}
+            <div className="flex items-center gap-2">
+              <div className="h-3 w-14 rounded bg-gray-200 dark:bg-muted animate-pulse" />
+              <div className="h-3 w-10 rounded bg-gray-200 dark:bg-muted animate-pulse" />
+              <div className="h-3 w-12 rounded bg-gray-200 dark:bg-muted animate-pulse" />
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       className={cn(
@@ -697,9 +721,10 @@ export function CommunityBoard({
 
       <div className="flex-1 overflow-y-auto px-1 py-1 min-h-0">
         {showSpinner ? (
-          <div className="flex flex-col items-center justify-center gap-2 py-16">
-            <Loader2 className="size-8 animate-spin text-chart-5" aria-hidden />
-            <p className="text-sm text-muted-foreground">게시글을 불러오는 중...</p>
+          <div className="px-2 sm:px-3">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <PostSkeleton key={i} />
+            ))}
           </div>
         ) : displayPosts.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center p-4 min-h-[200px]">
