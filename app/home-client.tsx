@@ -287,7 +287,7 @@ export function HomeClient() {
   const fetchLockRef = useRef(false);
 
   const fetchFeedPage = useCallback(
-    async (reset: boolean) => {
+    async (reset: boolean, forceReload = false) => {
       if (fetchLockRef.current) return;
       if (!reset && nextOffsetRef.current === 0) return;
 
@@ -314,7 +314,7 @@ export function HomeClient() {
         });
         const res = await fetch(`/api/bets-feed?${params.toString()}`, {
           credentials: "same-origin",
-          cache: "no-store",
+          cache: forceReload ? "reload" : "default",
         });
         const j = (await res.json().catch(() => ({}))) as {
           ok?: boolean;
@@ -359,7 +359,7 @@ export function HomeClient() {
   }, [fetchFeedPage]);
 
   useEffect(() => {
-    const onStale = () => void fetchFeedPage(true);
+    const onStale = () => void fetchFeedPage(true, true);
     window.addEventListener("voters:feedBetsMaybeStale", onStale);
     return () => window.removeEventListener("voters:feedBetsMaybeStale", onStale);
   }, [fetchFeedPage]);

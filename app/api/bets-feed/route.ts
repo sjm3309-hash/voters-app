@@ -27,7 +27,7 @@ import { sumOptionStakesByMarketIds, sumPoolsByMarketIds } from "@/lib/bet-histo
  *   (open/closed 두 쿼리를 합친 뒤 메모리에서 정렬하므로 Supabase `.range`는 단일 쿼리로 대체 불가)
  */
 
-export const dynamic = "force-dynamic";
+export const revalidate = 10;
 
 const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
 const FETCH_OPEN_CAP = 350;
@@ -38,9 +38,9 @@ const NO_STORE_HEADERS = {
   "Cache-Control": "no-store, max-age=0",
 };
 
-/** 성공 피드 응답: 30초 엣지 캐시, 60초 stale-while-revalidate */
+/** 성공 피드 응답: 10초 캐시, 20초 stale-while-revalidate */
 const FEED_CACHE_HEADERS = {
-  "Cache-Control": "public, s-maxage=30, stale-while-revalidate=60",
+  "Cache-Control": "public, s-maxage=10, stale-while-revalidate=20",
 };
 
 /** `*`: 정산 컬럼 마이그레이션 전 DB와 호환 (없는 컬럼은 결과에 포함되지 않음) */
