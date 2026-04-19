@@ -10,6 +10,7 @@ import { Logo } from "@/components/common/Logo";
 
 /** 보안: 로그인 실패 시 항상 동일 문구만 노출 */
 const LOGIN_ERROR_MESSAGE = "이메일 또는 비밀번호가 올바르지 않습니다.";
+const OAUTH_ERROR_MESSAGE = "소셜 로그인에 실패했습니다. 잠시 후 다시 시도해주세요.";
 
 // 컴포넌트 밖에서 한 번만 생성
 const supabase = createClient();
@@ -23,8 +24,10 @@ export function LoginClient() {
   const [showPw, setShowPw] = useState(false);
   const [loginLoading, setLoginLoading] = useState(false);
   const [socialLoading, setSocialLoading] = useState<"google" | "kakao" | null>(null);
-  const [showError, setShowError] = useState(
-    Boolean(searchParams.get("error")),
+  const isOAuthError = Boolean(searchParams.get("error"));
+  const [showError, setShowError] = useState(isOAuthError);
+  const [errorMessage, setErrorMessage] = useState(
+    isOAuthError ? OAUTH_ERROR_MESSAGE : LOGIN_ERROR_MESSAGE,
   );
 
   useEffect(() => {
@@ -43,6 +46,7 @@ export function LoginClient() {
       // 전체 페이지 새로고침 → 모든 컴포넌트가 새 세션을 읽음
       window.location.href = "/";
     } catch (err: unknown) {
+      setErrorMessage(LOGIN_ERROR_MESSAGE);
       setShowError(true);
     } finally {
       setLoginLoading(false);
@@ -59,7 +63,7 @@ export function LoginClient() {
         ...(provider === "kakao" && { scopes: "profile_nickname" }),
       },
     });
-    if (error) { setShowError(true); setSocialLoading(null); }
+    if (error) { setErrorMessage(OAUTH_ERROR_MESSAGE); setShowError(true); setSocialLoading(null); }
   }
 
   return (
@@ -99,7 +103,7 @@ export function LoginClient() {
               ].join(" ")}
               aria-hidden={!showError}
             >
-              {LOGIN_ERROR_MESSAGE}
+              {errorMessage}
             </p>
           </div>
 
