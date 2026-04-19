@@ -18,8 +18,13 @@ import { PointsHistoryDialog } from "@/components/points/points-history-dialog";
 import { useUserLevel } from "@/hooks/use-user-level";
 import { Logo } from "@/components/common/Logo";
 import { LevelIcon } from "@/components/level-icon";
-import { getUserManualLevel } from "@/lib/level-system";
+import {
+  cacheAuthorManualLevel,
+  getUserManualLevel,
+  setUserManualLevel,
+} from "@/lib/level-system";
 import { PurpleShieldIcon } from "@/components/admin-author-badge";
+import { createClient } from "@/utils/supabase/client";
 
 interface NavbarProps {
   balance: number;
@@ -30,20 +35,63 @@ interface NavbarProps {
 }
 
 export function Navbar({ balance, userId, searchQuery, onSearch }: NavbarProps) {
-  const { label: levelLabel, mounted: levelMounted, loggedIn, isAdmin, nickname } = useUserLevel();
+  const { mounted: levelMounted, loggedIn, isAdmin, nickname } = useUserLevel();
   const [historyOpen, setHistoryOpen] = useState(false);
-  const [userLevel, setUserLevel] = useState(1);
+  const [userLevel, setUserLevel] = useState(() =>
+    typeof window !== "undefined" && userId && userId !== "anon"
+      ? getUserManualLevel(userId)
+      : 1,
+  );
 
   useEffect(() => {
-    if (!userId || userId === "anon") return;
+    if (!userId || userId === "anon") {
+      setUserLevel(1);
+      return;
+    }
+
+    // 로컬 캐시로 먼저 표시(서버 응답 전 깜빡임 완화). DB와 다를 수 있음.
     setUserLevel(getUserManualLevel(userId));
+
     const onLevel = (e: Event) => {
       const ev = e as CustomEvent<{ level?: number }>;
       if (ev.detail?.level) setUserLevel(ev.detail.level);
       else setUserLevel(getUserManualLevel(userId));
     };
     window.addEventListener("voters:levelUpdated", onLevel);
-    return () => window.removeEventListener("voters:levelUpdated", onLevel);
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch("/api/user/profile-level", {
+          credentials: "same-origin",
+          cache: "no-store",
+        });
+        const j = (await res.json().catch(() => ({}))) as { ok?: boolean; level?: number };
+        if (cancelled || !res.ok || !j.ok || typeof j.level !== "number") return;
+
+        setUserLevel(j.level);
+        const local = getUserManualLevel(userId);
+        if (local !== j.level) setUserManualLevel(userId, j.level);
+
+        const supabase = createClient();
+        const { data: { user } } = await supabase.auth.getUser();
+        const displayName = (
+          (typeof user?.user_metadata?.nickname === "string" && user.user_metadata.nickname) ||
+          (typeof user?.user_metadata?.full_name === "string" && user.user_metadata.full_name) ||
+          (typeof user?.user_metadata?.name === "string" && user.user_metadata.name) ||
+          user?.email?.split("@")[0] ||
+          ""
+        ).trim();
+        if (displayName) cacheAuthorManualLevel(displayName, j.level);
+      } catch {
+        /* 로컬 값 유지 */
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener("voters:levelUpdated", onLevel);
+    };
   }, [userId]);
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const mobileSearchInputDomId = "navbar-mobile-search-field";

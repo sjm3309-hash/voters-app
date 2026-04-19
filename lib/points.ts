@@ -2,7 +2,12 @@
 
 import { useEffect, useState } from "react";
 import { createClient } from "@/utils/supabase/client";
-import { cacheAuthorLevel, cacheAuthorManualLevel, getUserManualLevel } from "@/lib/level-system";
+import {
+  cacheAuthorLevel,
+  cacheAuthorManualLevel,
+  getUserManualLevel,
+  setUserManualLevel,
+} from "@/lib/level-system";
 import { registerAdminName } from "@/lib/leaderboard";
 import { isAdminEmail } from "@/lib/admin";
 import { ADMIN_BALANCE } from "@/lib/points-constants";
@@ -274,8 +279,20 @@ export function useUserPointsBalance() {
           "";
         if (displayName) {
           cacheAuthorLevel(displayName, bal);
-          cacheAuthorManualLevel(displayName, getUserManualLevel(uid));
           cacheAuthorUid(displayName, uid);
+          void fetch("/api/user/profile-level", { credentials: "same-origin", cache: "no-store" })
+            .then((r) => r.json().catch(() => ({})))
+            .then((lj: { ok?: boolean; level?: number }) => {
+              if (lj.ok && typeof lj.level === "number") {
+                if (getUserManualLevel(uid) !== lj.level) setUserManualLevel(uid, lj.level);
+                cacheAuthorManualLevel(displayName, lj.level);
+              } else {
+                cacheAuthorManualLevel(displayName, getUserManualLevel(uid));
+              }
+            })
+            .catch(() => {
+              cacheAuthorManualLevel(displayName, getUserManualLevel(uid));
+            });
         }
       } else {
         syncLocal(uid);
