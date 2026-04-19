@@ -5,6 +5,9 @@ import type { BoardCategoryId, BoardPost } from "@/lib/board";
 import { checkUserModeration } from "@/lib/moderation-check";
 import { isAdminEmail } from "@/lib/admin";
 
+/** GET 목록 응답을 60초 캐시 (Next.js 엣지·CDN 레이어) */
+export const revalidate = 60;
+
 const LIMIT_DEFAULT = 20;
 
 const ALLOWED_CATEGORY = new Set<BoardCategoryId>([
@@ -145,10 +148,10 @@ export async function GET(request: Request) {
     const rows = Array.isArray(data) ? data : [];
     const posts = rows.map((r) => rowToBoardPost(r as Record<string, unknown>));
 
-    // 검색 쿼리가 있을 때는 캐시하지 않음 (개인화된 결과)
+    // 검색 쿼리가 있을 때는 캐시하지 않음
     const listCacheHeaders = q.length > 0
-      ? {}
-      : { "Cache-Control": "public, s-maxage=20, stale-while-revalidate=40" };
+      ? { "Cache-Control": "no-store, max-age=0" }
+      : { "Cache-Control": "public, s-maxage=60, stale-while-revalidate=120" };
 
     return NextResponse.json(
       { ok: true, posts, page, limit, count: total, totalPages },

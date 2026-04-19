@@ -476,9 +476,9 @@ export function CommunityBoard({
 
         const res = await fetch(`/api/board-posts?${params.toString()}`, {
           credentials: "same-origin",
-          // API에 s-maxage=20 캐시 헤더가 있으므로 "default"로 CDN/브라우저 캐시 활용
-          // (새 글 작성·refreshTick 경로는 별도로 cache:"no-store" 사용)
-          cache: combinedSearch.length > 0 ? "no-store" : "default",
+          ...(combinedSearch.length > 0
+            ? { cache: "no-store" }
+            : { next: { revalidate: 60 } }),
         });
         const j = (await res.json().catch(() => ({}))) as {
           ok?: boolean;
