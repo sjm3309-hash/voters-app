@@ -132,7 +132,7 @@ export async function POST(request: Request) {
     void svc.from("pebble_transactions").insert({
       user_id: user.id,
       amount: -normalized.total,
-      balance_after: balanceAfter,
+      balance_after: balanceAfter ?? 0,
       type: "bet_place",
       description: `🎯 보트 참여 — ${normalized.total.toLocaleString()}P`,
     });

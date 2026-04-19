@@ -184,10 +184,11 @@ export async function POST(
     // 창작자에게 생성 비용 절반(5,000P) 환불 (5% 수수료 아님)
     const creatorId = r.user_id ? String(r.user_id).trim() : "";
     if (creatorId && creatorId !== "anon") {
-      await adjustPebblesAtomic(creatorId, NO_CONTEST_CREATOR_REFUND);
+      const creatorRefundResult = await adjustPebblesAtomic(creatorId, NO_CONTEST_CREATOR_REFUND);
       void svc.from("pebble_transactions").insert({
         user_id: creatorId,
         amount: NO_CONTEST_CREATOR_REFUND,
+        balance_after: creatorRefundResult.ok ? creatorRefundResult.balance : 0,
         type: "creator_refund",
         description: `↩ 보트 노콘테스트 창작자 환불 — ${NO_CONTEST_CREATOR_REFUND.toLocaleString()}P`,
       });
