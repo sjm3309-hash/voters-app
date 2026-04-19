@@ -207,12 +207,13 @@ interface CreateConfirmDialogProps {
   question: string;
   balance: number;
   isAdmin?: boolean;
+  isEdit?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
   submitting: boolean;
 }
 
-function CreateConfirmDialog({ question, balance, isAdmin, onConfirm, onCancel, submitting }: CreateConfirmDialogProps) {
+function CreateConfirmDialog({ question, balance, isAdmin, isEdit, onConfirm, onCancel, submitting }: CreateConfirmDialogProps) {
   const affordable = isAdmin || balance >= CREATE_COST;
 
   return (
@@ -244,7 +245,9 @@ function CreateConfirmDialog({ question, balance, isAdmin, onConfirm, onCancel, 
 
           {/* 헤더 */}
           <div className="pr-6">
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">보트 만들기 확인</p>
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">
+              {isEdit ? "보트 수정 확인" : "보트 만들기 확인"}
+            </p>
             <p className="text-sm font-medium text-foreground line-clamp-2 leading-snug">{question}</p>
           </div>
 
@@ -308,7 +311,11 @@ function CreateConfirmDialog({ question, balance, isAdmin, onConfirm, onCancel, 
           {/* 수정 불가 경고 */}
           <div className="flex items-start gap-2 px-3 py-2.5 rounded-xl bg-amber-500/8 border border-amber-500/25 text-amber-400 text-xs">
             <AlertTriangle className="size-3.5 shrink-0 mt-0.5" />
-            <span>확정 후에는 보트 내용을 수정할 수 없습니다. 질문, 선택지, 마감일 등을 다시 한번 확인해주세요.</span>
+            <span>
+              {isEdit
+                ? "수정 내용을 저장합니다. 저장 후에도 참여자가 없는 동안은 다시 수정 가능합니다."
+                : "확정 후 누군가 참여하면 보트 내용을 수정할 수 없습니다. 질문, 선택지, 마감일 등을 다시 한번 확인해주세요."}
+            </span>
           </div>
 
           {/* 버튼 */}
@@ -395,6 +402,10 @@ function CreateMarketPageInner() {
   const searchParams = useSearchParams();
   const { userId, points: balance } = useUserPointsBalance();
 
+  // ── 수정 모드 파라미터 ───────────────────────────────────────────────────
+  const editId = searchParams.get("editId") ?? "";
+  const isEdit = Boolean(editId);
+
   // ── 복제 파라미터 파싱 ───────────────────────────────────────────────────
   const cloneQuestion    = searchParams.get("q") ?? "";
   const cloneDescription = searchParams.get("desc") ?? "";
@@ -423,7 +434,7 @@ function CreateMarketPageInner() {
     if (!raw) return null;
     return utcISOToKSTParts(raw);
   })();
-  const isClone = Boolean(cloneQuestion);
+  const isClone = !isEdit && Boolean(cloneQuestion);
 
   const [question, setQuestion]       = useState(cloneQuestion);
   const [description, setDescription] = useState(cloneDescription);
@@ -525,6 +536,52 @@ function CreateMarketPageInner() {
   const handleConfirm = async () => {
     if (submitting) return;
 
+    setSubmitting(true);
+
+    // ── 수정 모드 ────────────────────────────────────────────────────────
+    if (isEdit) {
+      try {
+        const filled = options.filter((o) => o.label.trim());
+        const res = await fetch(`/api/bets/${editId}`, {
+          method: "PATCH",
+          credentials: "same-origin",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            question: question.trim(),
+            description: description.trim() || undefined,
+            endsAt: kstToUtcISO(endsDate, endsTime),
+            resultAt: kstToUtcISO(resultDate, resultTime),
+            options: filled.map((o) => ({ label: o.label.trim(), color: o.color })),
+            resolver: resolver.trim() || undefined,
+          }),
+        });
+        const j = await res.json().catch(() => ({})) as { ok?: boolean; error?: string };
+        setSubmitting(false);
+        setShowConfirm(false);
+        if (!res.ok || !j?.ok) {
+          const errMap: Record<string, string> = {
+            already_has_bets: "이미 참여자가 있어 수정할 수 없습니다.",
+            already_closed: "마감된 보트는 수정할 수 없습니다.",
+            forbidden: "수정 권한이 없습니다.",
+          };
+          const msg = errMap[j?.error ?? ""] ?? j?.error ?? "수정에 실패했습니다.";
+          setError(msg);
+          toast.error(msg);
+          return;
+        }
+        toast.success("수정 완료!");
+        router.push(`/market/${editId}`);
+        router.refresh();
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "수정 중 오류가 발생했습니다.";
+        setError(msg);
+        toast.error(msg);
+        setShowConfirm(false);
+        setSubmitting(false);
+      }
+      return;
+    }
+
     const adminCreating = isAdminUser(userId);
 
     // 페블 잔액 확인 (운영자는 면제)
@@ -533,10 +590,9 @@ function CreateMarketPageInner() {
       setError(m);
       toast.error(m);
       setShowConfirm(false);
+      setSubmitting(false);
       return;
     }
-
-    setSubmitting(true);
 
     try {
       /* 페블 차감은 서버(create-user-market)에서 동일 세션 기준으로 처리 — 클라이언트 차감은 세션 불일치 시 실패할 수 있음 */
@@ -606,7 +662,9 @@ function CreateMarketPageInner() {
             <ArrowLeft className="size-5" />
           </Link>
           <div className="flex items-center gap-2">
-            <h1 className="text-lg font-bold text-foreground">보트 만들기</h1>
+            <h1 className="text-lg font-bold text-foreground">
+              {isEdit ? "보트 수정하기" : "보트 만들기"}
+            </h1>
             {isClone && (
               <span className="rounded-full bg-chart-5/15 px-2 py-0.5 text-xs font-semibold text-chart-5 border border-chart-5/30">
                 복제됨
@@ -615,6 +673,14 @@ function CreateMarketPageInner() {
           </div>
         </div>
       </div>
+      {isEdit && (
+        <div className="max-w-2xl mx-auto px-4 pt-4">
+          <div className="flex items-center gap-2 rounded-xl border border-blue-500/30 bg-blue-500/5 px-4 py-3 text-sm text-blue-400">
+            <AlertTriangle className="size-4 shrink-0" />
+            <span>참여자가 없는 동안에만 수정 가능합니다. 누군가 참여하면 즉시 수정이 잠깁니다.</span>
+          </div>
+        </div>
+      )}
       {isClone && (
         <div className="max-w-2xl mx-auto px-4 pt-4">
           <div className="flex items-center gap-2 rounded-xl border border-chart-5/30 bg-chart-5/5 px-4 py-3 text-sm text-chart-5">
@@ -974,12 +1040,12 @@ function CreateMarketPageInner() {
             }
             title={!allChecked ? "체크리스트를 모두 확인해주세요" : undefined}
           >
-            보트 만들기
+            {isEdit ? "수정 저장하기" : "보트 만들기"}
           </Button>
         </div>
 
         <p className="text-xs text-muted-foreground text-center pb-4">
-          생성된 보트는 홈 화면에 즉시 표시됩니다
+          {isEdit ? "수정 후 홈 화면에 즉시 반영됩니다" : "생성된 보트는 홈 화면에 즉시 표시됩니다"}
         </p>
       </div>
 
@@ -989,6 +1055,7 @@ function CreateMarketPageInner() {
           question={question}
           balance={balance}
           isAdmin={isAdminUser(userId)}
+          isEdit={isEdit}
           onConfirm={handleConfirm}
           onCancel={() => setShowConfirm(false)}
           submitting={submitting}

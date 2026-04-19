@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeft, Award, CheckCircle2, Clock, Coins, ExternalLink, Eye, Loader2, ThumbsUp, TrendingUp, Trophy, Users, X } from "lucide-react";
+import { ArrowLeft, Award, CheckCircle2, Clock, Coins, ExternalLink, Eye, Loader2, Pencil, ThumbsUp, TrendingUp, Trophy, Users, X } from "lucide-react";
 import { ReportButton } from "@/components/report-button";
 import { DislikeButton } from "@/components/dislike-button";
 import { Navbar } from "@/components/navbar";
@@ -1062,7 +1062,7 @@ export default function MarketDetailPage() {
 
           {/* Content */}
           <div className="min-w-0">
-            {/* Back Button + 운영자 관리 버튼 */}
+            {/* Back Button + 수정/운영자 관리 버튼 */}
             <div className="flex items-center justify-between mb-6">
               <button
                 type="button"
@@ -1072,15 +1072,31 @@ export default function MarketDetailPage() {
                 <ArrowLeft className="size-4" />
                 <span className="text-sm">보트 목록으로</span>
               </button>
-              {isAdmin && (
-                <Link
-                  href={`/admin/betting/${marketId}`}
-                  className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-chart-5/40 text-chart-5 hover:bg-chart-5/10 transition-colors font-medium"
-                >
-                  <ExternalLink className="size-3.5" />
-                  관리자 상세 페이지
-                </Link>
-              )}
+              <div className="flex items-center gap-2">
+                {/* 창작자 수정 버튼 — 참여자 없고 마감 전일 때만 */}
+                {market &&
+                  userId !== "anon" &&
+                  market.authorId === userId &&
+                  market.totalPool === 0 &&
+                  ["waiting", "active"].includes(market.status ?? "") && (
+                  <Link
+                    href={`/market/create?editId=${marketId}&q=${encodeURIComponent(market.question)}&desc=${encodeURIComponent(market.description ?? "")}&category=${market.category}&opts=${encodeURIComponent(JSON.stringify(market.options))}&endsAt=${encodeURIComponent(market.endsAt.toISOString())}&resultAt=${encodeURIComponent(market.resultAt?.toISOString() ?? "")}&resolver=${encodeURIComponent(market.resolver ?? "")}`}
+                    className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-blue-500/40 text-blue-400 hover:bg-blue-500/10 transition-colors font-medium"
+                  >
+                    <Pencil className="size-3.5" />
+                    보트 수정
+                  </Link>
+                )}
+                {isAdmin && (
+                  <Link
+                    href={`/admin/betting/${marketId}`}
+                    className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-chart-5/40 text-chart-5 hover:bg-chart-5/10 transition-colors font-medium"
+                  >
+                    <ExternalLink className="size-3.5" />
+                    관리자 상세 페이지
+                  </Link>
+                )}
+              </div>
             </div>
 
             {/* Two Column Layout */}
