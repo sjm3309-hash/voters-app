@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { createClient } from "@/utils/supabase/client";
-import { isAdminEmail } from "@/lib/admin";
+import { isAdminEmail, isAdminUserId } from "@/lib/admin";
 
 /**
  * 현재 로그인한 유저가 운영자인지 반환합니다.
@@ -15,7 +15,8 @@ export function useIsAdmin(): { isAdmin: boolean; loading: boolean } {
   useEffect(() => {
     const supabase = createClient();
     supabase.auth.getUser().then(({ data }) => {
-      setIsAdmin(isAdminEmail(data.user?.email));
+      const user = data.user;
+      setIsAdmin(isAdminEmail(user?.email) || isAdminUserId(user?.id));
       setLoading(false);
     });
   }, []);

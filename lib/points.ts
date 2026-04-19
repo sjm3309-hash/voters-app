@@ -9,7 +9,7 @@ import {
   setUserManualLevel,
 } from "@/lib/level-system";
 import { registerAdminName } from "@/lib/leaderboard";
-import { isAdminEmail } from "@/lib/admin";
+import { isAdminEmail, isAdminUserId } from "@/lib/admin";
 import { ADMIN_BALANCE } from "@/lib/points-constants";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -260,7 +260,7 @@ export function useUserPointsBalance() {
     };
 
     const pullBalance = async (uid: string, user: import("@supabase/supabase-js").User | null) => {
-      const admin = isAdminEmail(user?.email);
+      const admin = isAdminEmail(user?.email) || isAdminUserId(uid);
       if (admin) {
         setAdminFlag(uid);
         setUserId(uid);
@@ -301,7 +301,7 @@ export function useUserPointsBalance() {
 
     const applySession = (uid: string, user: import("@supabase/supabase-js").User | null) => {
       if (uid !== "anon") {
-        const admin = isAdminEmail(user?.email);
+        const admin = isAdminEmail(user?.email) || isAdminUserId(uid);
         const displayName =
           user?.user_metadata?.nickname ??
           user?.user_metadata?.full_name ??
