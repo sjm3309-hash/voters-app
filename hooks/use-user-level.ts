@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { createClient } from "@/utils/supabase/client";
-import { isAdminEmail } from "@/lib/admin";
+import { isAdminEmail, isAdminUserId } from "@/lib/admin";
 
 export interface UserLevelInfo {
   isAdmin: boolean;
@@ -40,14 +40,14 @@ export function useUserLevel(): UserLevelInfo {
     supabase.auth.getSession().then(({ data: { session } }) => {
       const user = session?.user ?? null;
       setLoggedIn(!!user);
-      setIsAdmin(isAdminEmail(user?.email));
+      setIsAdmin(isAdminEmail(user?.email) || isAdminUserId(user?.id));
       setNickname(extractNickname(user));
     });
 
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
       const user = session?.user ?? null;
       setLoggedIn(!!user);
-      setIsAdmin(isAdminEmail(user?.email));
+      setIsAdmin(isAdminEmail(user?.email) || isAdminUserId(user?.id));
       setNickname(extractNickname(user));
     });
 
