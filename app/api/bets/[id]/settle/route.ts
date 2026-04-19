@@ -8,6 +8,7 @@ import { adjustPebblesAtomic } from "@/lib/pebbles-db";
 import {
   getBetHistoryFlavor,
   betHistoryMarketCol,
+  betHistoryOptionCol,
   readOptionIdFromRow,
 } from "@/lib/bet-history-flavor";
 
@@ -117,10 +118,11 @@ export async function POST(
   // ── 반대쪽 베팅 여부 확인 ──────────────────────────────────────────────
   const flavor = await getBetHistoryFlavor(svc);
   const marketCol = betHistoryMarketCol(flavor);
+  const optionCol = betHistoryOptionCol(flavor);
 
   const { data: hist, error: histErr } = await svc
     .from("bet_history")
-    .select("user_id, amount, choice, option_id")
+    .select(`user_id, amount, ${optionCol}`)
     .eq(marketCol, marketId);
 
   if (histErr) {
