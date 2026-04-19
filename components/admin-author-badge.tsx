@@ -8,7 +8,7 @@
 import { isAdminUserId } from "@/lib/admin";
 
 /** 보라색 방패 SVG 아이콘 (인라인) */
-function PurpleShieldIcon({ size = 14 }: { size?: number }) {
+export function PurpleShieldIcon({ size = 14 }: { size?: number }) {
   return (
     <svg
       width={size}

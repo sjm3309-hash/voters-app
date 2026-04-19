@@ -28,14 +28,19 @@ import { sumOptionStakesByMarketIds, sumPoolsByMarketIds } from "@/lib/bet-histo
  */
 
 export const dynamic = "force-dynamic";
-export const revalidate = 0;
 
 const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
 const FETCH_OPEN_CAP = 350;
 const FETCH_CLOSED_CAP = 350;
 
+/** 오류 응답은 캐시하지 않음 */
 const NO_STORE_HEADERS = {
   "Cache-Control": "no-store, max-age=0",
+};
+
+/** 성공 피드 응답: 30초 엣지 캐시, 60초 stale-while-revalidate */
+const FEED_CACHE_HEADERS = {
+  "Cache-Control": "public, s-maxage=30, stale-while-revalidate=60",
 };
 
 /** `*`: 정산 컬럼 마이그레이션 전 DB와 호환 (없는 컬럼은 결과에 포함되지 않음) */
@@ -135,19 +140,6 @@ export async function GET(request: Request) {
       rowPassesPublicFeedGate(r, threeDaysAgoMs),
     );
 
-    console.log("[bets-feed]", {
-      open: openRes.data?.length ?? 0,
-      closed: closedRes.data?.length ?? 0,
-      merged: rawRows.length,
-      hasCategoryFilter: Boolean(category),
-      hasSubCategoryFilter: Boolean(subCategory),
-      sort: sort ?? "smart",
-      offset,
-      limit,
-      openErr: openRes.error?.message,
-      closedErr: closedRes.error?.message,
-    });
-
     const ids = rawRows.map((r) => r.id).filter(Boolean);
     const [poolBy, stakesByMarket] =
       ids.length > 0
@@ -207,7 +199,7 @@ export async function GET(request: Request) {
 
     return NextResponse.json(
       { ok: true, markets, hasMore, offset, limit, total: totalSorted },
-      { headers: NO_STORE_HEADERS },
+      { headers: FEED_CACHE_HEADERS },
     );
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);

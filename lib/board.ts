@@ -1,6 +1,6 @@
-import type { CategoryId, FilterId } from "@/components/category-filter";
+import type { CategoryId, FilterId, HiddenCategoryId } from "@/components/category-filter";
 
-export type BoardCategoryId = Exclude<CategoryId, "all">;
+export type BoardCategoryId = Exclude<CategoryId, "all"> | HiddenCategoryId;
 
 export type BoardPost = {
   id: string;
@@ -92,4 +92,5 @@ export function boardCategoryFromFilter(filter: FilterId): BoardCategoryId | nul
   if (filter === "popular" || filter === "recent" || filter === "all") return null;
   return filter as BoardCategoryId;
 }
+
 

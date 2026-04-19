@@ -29,7 +29,9 @@ export async function GET(req: NextRequest) {
 
     const row = data as { level?: unknown };
     const level = Math.max(1, Math.min(56, Math.floor(Number(row.level ?? 1))));
-    return NextResponse.json({ ok: true, level });
+    return NextResponse.json({ ok: true, level }, {
+      headers: { "Cache-Control": "public, s-maxage=300, stale-while-revalidate=600" },
+    });
   } catch (e) {
     return NextResponse.json({ ok: false, error: String(e) }, { status: 500 });
   }

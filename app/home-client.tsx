@@ -53,6 +53,7 @@ import { parseFeedWireToMarket, type BetFeedMarketWire } from "@/lib/bets-feed-w
 import { buildBetsFeedSearchParams } from "@/lib/bets-feed-home-query";
 import { AdSlot } from "@/components/ads/ad-slot";
 import { MyBoatsDialog } from "@/components/my-boats-dialog";
+import { ClockProvider } from "@/lib/clock-context";
 
 /** 인피드 광고 — N번째 카드 뒤에 삽입 */
 const AD_FEED_INTERVAL = 5; // 5개 마다 광고 1개
@@ -511,9 +512,13 @@ export function HomeClient() {
     [feedMarkets],
   );
 
-  const filteredMarkets = useMemo(() => {
-    const allMarkets = mergedMarkets;
+  /** 트렌딩 순으로 한 번만 정렬 (filteredMarkets와 trendingSidebarMarkets에서 재사용) */
+  const sortedByTrending = useMemo(
+    () => [...mergedMarkets].sort((a, b) => marketTrendingScore(b) - marketTrendingScore(a)),
+    [mergedMarkets],
+  );
 
+  const filteredMarkets = useMemo(() => {
     const matchesFilter = (market: Market) => {
       const matchesCategory =
         categoryFilter === "all" || market.category === categoryFilter;
@@ -538,15 +543,15 @@ export function HomeClient() {
     };
 
     if (sortMode === "popular") {
-      return [...allMarkets]
-        .filter(matchesFilter)
-        .sort((a, b) => marketTrendingScore(b) - marketTrendingScore(a));
+      // 이미 트렌딩 순으로 정렬된 배열에서 필터만 적용
+      return sortedByTrending.filter(matchesFilter);
     }
 
     // 최신 탭: 서버가 `created_desc`로 이미 정렬 — 클라이언트 재정렬 없이 필터만
-    return allMarkets.filter(matchesFilter);
+    return mergedMarkets.filter(matchesFilter);
   }, [
     sortMode,
+    sortedByTrending,
     categoryFilter,
     effectiveGameSub,
     effectiveSportsSub,
@@ -556,13 +561,11 @@ export function HomeClient() {
     mergedMarkets,
   ]);
 
-  /** 게시판 전용 모드 사이드바: 트렌딩 상위 보트 */
-  const trendingSidebarMarkets = useMemo(() => {
-    const all = mergedMarkets;
-    return [...all]
-      .sort((a, b) => marketTrendingScore(b) - marketTrendingScore(a))
-      .slice(0, 5);
-  }, [mergedMarkets]);
+  /** 게시판 전용 모드 사이드바: 트렌딩 상위 보트 (sortedByTrending 재사용) */
+  const trendingSidebarMarkets = useMemo(
+    () => sortedByTrending.slice(0, 5),
+    [sortedByTrending],
+  );
 
   const betFeedEmpty = (
     <div className="flex flex-col items-center justify-center py-16 text-center">
@@ -581,6 +584,7 @@ export function HomeClient() {
   );
 
   return (
+    <ClockProvider>
     <div className="min-h-screen bg-background">
       <Navbar
         balance={userBalance}
@@ -880,5 +884,6 @@ export function HomeClient() {
         userId={userId}
       />
     </div>
+    </ClockProvider>
   );
 }

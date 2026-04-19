@@ -17,6 +17,7 @@ export const MARKET_CATEGORIES = [
   { id: "crypto",   label: "크립토" },
   { id: "politics", label: "정치" },
   { id: "game",     label: "게임" },
+  { id: "poljjak",  label: "폴짝" },
 ] as const;
 
 export type MarketCategoryId = typeof MARKET_CATEGORIES[number]["id"];

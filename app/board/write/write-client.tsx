@@ -31,6 +31,7 @@ const categoryOptions: { value: BoardCategoryId; label: string }[] = [
   { value: "crypto",   label: "🪙 크립토" },
   { value: "politics", label: "🏛️ 정치" },
   { value: "game",     label: "🎮 게임" },
+  { value: "poljjak",  label: "🏀 폴짝" },
 ];
 
 function stripHtml(html: string) {

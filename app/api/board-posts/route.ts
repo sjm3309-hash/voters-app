@@ -14,6 +14,7 @@ const ALLOWED_CATEGORY = new Set<BoardCategoryId>([
   "crypto",
   "politics",
   "game",
+  "poljjak",
 ]);
 
 function parsePage(raw: string | null): number {
@@ -144,14 +145,15 @@ export async function GET(request: Request) {
     const rows = Array.isArray(data) ? data : [];
     const posts = rows.map((r) => rowToBoardPost(r as Record<string, unknown>));
 
-    return NextResponse.json({
-      ok: true,
-      posts,
-      page,
-      limit,
-      count: total,
-      totalPages,
-    });
+    // 검색 쿼리가 있을 때는 캐시하지 않음 (개인화된 결과)
+    const listCacheHeaders = q.length > 0
+      ? {}
+      : { "Cache-Control": "public, s-maxage=20, stale-while-revalidate=40" };
+
+    return NextResponse.json(
+      { ok: true, posts, page, limit, count: total, totalPages },
+      { headers: listCacheHeaders },
+    );
   } catch (e) {
     console.error("[board-posts GET]", e);
     return NextResponse.json(

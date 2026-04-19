@@ -17,6 +17,9 @@ import { NotificationsBell } from "@/components/notifications/notifications-bell
 import { PointsHistoryDialog } from "@/components/points/points-history-dialog";
 import { useUserLevel } from "@/hooks/use-user-level";
 import { Logo } from "@/components/common/Logo";
+import { LevelIcon } from "@/components/level-icon";
+import { getUserManualLevel } from "@/lib/level-system";
+import { PurpleShieldIcon } from "@/components/admin-author-badge";
 
 interface NavbarProps {
   balance: number;
@@ -27,8 +30,21 @@ interface NavbarProps {
 }
 
 export function Navbar({ balance, userId, searchQuery, onSearch }: NavbarProps) {
-  const { label: levelLabel, mounted: levelMounted, loggedIn, isAdmin } = useUserLevel();
+  const { label: levelLabel, mounted: levelMounted, loggedIn, isAdmin, nickname } = useUserLevel();
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [userLevel, setUserLevel] = useState(1);
+
+  useEffect(() => {
+    if (!userId || userId === "anon") return;
+    setUserLevel(getUserManualLevel(userId));
+    const onLevel = (e: Event) => {
+      const ev = e as CustomEvent<{ level?: number }>;
+      if (ev.detail?.level) setUserLevel(ev.detail.level);
+      else setUserLevel(getUserManualLevel(userId));
+    };
+    window.addEventListener("voters:levelUpdated", onLevel);
+    return () => window.removeEventListener("voters:levelUpdated", onLevel);
+  }, [userId]);
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const mobileSearchInputDomId = "navbar-mobile-search-field";
 
@@ -160,23 +176,26 @@ export function Navbar({ balance, userId, searchQuery, onSearch }: NavbarProps) 
             </>
           )}
 
-          {/* 페블 + 레벨 — 로그인 시에만 표시, 클릭하면 내역 모달 */}
+          {/* 닉네임 + 페블 통합 버튼 — 로그인 시에만 표시 */}
           {levelMounted && loggedIn && (
             <button
               onClick={() => setHistoryOpen(true)}
-              className="flex shrink-0 items-center gap-1.5 px-2 py-1.5 sm:px-3 sm:gap-2 rounded-full bg-chart-5/10 border border-chart-5/30 hover:bg-chart-5/20 hover:border-chart-5/50 transition-colors whitespace-nowrap"
+              className="flex shrink-0 items-center gap-1.5 px-2 py-1.5 sm:px-3 rounded-full bg-chart-5/10 border border-chart-5/30 hover:bg-chart-5/20 hover:border-chart-5/50 transition-colors whitespace-nowrap max-w-[200px] sm:max-w-[260px]"
               title="페블 내역 보기"
             >
-              {/* 운영자 배지만 표시, 일반 유저는 아이콘 없음 */}
-              {isAdmin && (
-                <span className="text-xs font-bold px-1.5 py-0.5 rounded-full border leading-none bg-chart-5/20 text-chart-5 border-chart-5/40">
-                  운영자
+              {/* 레벨 아이콘 — 운영자는 보라색 방패, 일반 유저는 레벨 아이콘 */}
+              <span className="shrink-0">
+                {isAdmin ? <PurpleShieldIcon size={14} /> : <LevelIcon level={userLevel} size={14} />}
+              </span>
+              {nickname && (
+                <span className="hidden sm:block text-xs font-medium text-foreground truncate min-w-0 max-w-[80px]">
+                  {nickname}
                 </span>
               )}
-              <span className="text-xs text-muted-foreground hidden sm:inline">
-                나의 보유 페블:
-              </span>
-              <span className="text-chart-5 font-semibold text-sm">
+              {nickname && (
+                <span className="hidden sm:block text-xs text-muted-foreground shrink-0">·</span>
+              )}
+              <span className="text-chart-5 font-semibold text-sm shrink-0">
                 <span suppressHydrationWarning>{balance.toLocaleString()}</span> P
               </span>
             </button>
@@ -189,9 +208,9 @@ export function Navbar({ balance, userId, searchQuery, onSearch }: NavbarProps) 
               href="/profile"
               aria-label="프로필"
               title="프로필"
-              className="relative flex shrink-0 items-center justify-center rounded-lg p-2.5 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+              className="relative flex shrink-0 items-center justify-center rounded-lg p-2 border border-border/60 bg-background text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
             >
-              <UserRound className="size-5" aria-hidden />
+              <UserRound className="size-4" aria-hidden />
             </Link>
           )}
           {/* 알림 종 — 로그인 시에만 표시 */}

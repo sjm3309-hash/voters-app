@@ -36,6 +36,7 @@ const categoryLabel: Record<BoardPost["category"], string> = {
   crypto: "🪙 크립토",
   politics: "🏛️ 정치",
   game: "🎮 게임",
+  poljjak: "🏀 폴짝",
 };
 
 function formatTimestamp(date: Date): string {

@@ -233,7 +233,41 @@ export function LevelProgress({ level, points, className }: LevelProgressProps) 
 /** 인메모리 레벨 캐시 (TTL: 5분) */
 const LEVEL_FETCH_TTL = 5 * 60 * 1000;
 const levelMemCache = new Map<string, { level: number; ts: number }>();
-const levelFetchPromises = new Map<string, Promise<number | null>>();
+
+// ─── 배치 큐 ───────────────────────────────────────────────────────────────
+// 같은 렌더 사이클(50ms 이내)에 요청된 닉네임을 모아 /api/user/levels 한 번 호출.
+const batchQueue = new Map<string, Array<(level: number | null) => void>>();
+let batchTimer: ReturnType<typeof setTimeout> | null = null;
+
+function flushBatch() {
+  batchTimer = null;
+  if (batchQueue.size === 0) return;
+
+  const names = [...batchQueue.keys()];
+  const callbacks = new Map(batchQueue);
+  batchQueue.clear();
+
+  const url = `/api/user/levels?names=${names.map(encodeURIComponent).join(",")}`;
+  fetch(url)
+    .then((r) => r.json() as Promise<{ ok?: boolean; levels?: Record<string, number> }>)
+    .then((j) => {
+      const levelsMap = j.ok && j.levels ? j.levels : {};
+      const now = Date.now();
+      for (const [name, cbs] of callbacks) {
+        const level = levelsMap[name] ?? null;
+        if (level !== null) {
+          levelMemCache.set(name, { level, ts: now });
+          cacheAuthorManualLevel(name, level);
+        }
+        for (const cb of cbs) cb(level);
+      }
+    })
+    .catch(() => {
+      for (const cbs of callbacks.values()) {
+        for (const cb of cbs) cb(null);
+      }
+    });
+}
 
 function fetchAuthorLevel(name: string): Promise<number | null> {
   const cached = levelMemCache.get(name);
@@ -241,28 +275,17 @@ function fetchAuthorLevel(name: string): Promise<number | null> {
     return Promise.resolve(cached.level);
   }
 
-  const inFlight = levelFetchPromises.get(name);
-  if (inFlight) return inFlight;
-
-  const promise = fetch(`/api/user/level?name=${encodeURIComponent(name)}`, {
-    cache: "no-store",
-  })
-    .then((r) => r.json() as Promise<{ ok?: boolean; level?: number }>)
-    .then((j) => {
-      if (j.ok && typeof j.level === "number") {
-        levelMemCache.set(name, { level: j.level, ts: Date.now() });
-        cacheAuthorManualLevel(name, j.level);
-        return j.level;
-      }
-      return null;
-    })
-    .catch(() => null)
-    .finally(() => {
-      levelFetchPromises.delete(name);
-    });
-
-  levelFetchPromises.set(name, promise);
-  return promise;
+  return new Promise<number | null>((resolve) => {
+    const existing = batchQueue.get(name);
+    if (existing) {
+      existing.push(resolve);
+    } else {
+      batchQueue.set(name, [resolve]);
+    }
+    if (!batchTimer) {
+      batchTimer = setTimeout(flushBatch, 50);
+    }
+  });
 }
 
 interface AuthorLevelIconProps {

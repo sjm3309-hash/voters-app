@@ -23,6 +23,35 @@ import {
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
+// ─── 커스텀 아이콘 ────────────────────────────────────────────────────────────
+
+function BasketballIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      xmlns="http://www.w3.org/2000/svg"
+      className={className}
+      aria-hidden="true"
+    >
+      {/* 외곽 원 */}
+      <circle cx="12" cy="12" r="9" />
+      {/* 세로 중앙선 */}
+      <line x1="12" y1="3" x2="12" y2="21" />
+      {/* 가로 중앙선 */}
+      <line x1="3" y1="12" x2="21" y2="12" />
+      {/* 왼쪽 호 */}
+      <path d="M5.5 5.5 Q2.5 12 5.5 18.5" />
+      {/* 오른쪽 호 */}
+      <path d="M18.5 5.5 Q21.5 12 18.5 18.5" />
+    </svg>
+  );
+}
+
 // ─── 정렬 탭 (항상 노출) ──────────────────────────────────────────────────────
 
 const SORT_FILTERS = [
@@ -57,15 +86,18 @@ export const VISIBLE_CATEGORIES = [
 
 export const ALL_CATEGORIES: { id: string; label: string; icon: React.ElementType }[] = [
   ...VISIBLE_CATEGORIES,
-  // 여기에 추가 탭 넣으면 전체 팝오버에서만 표시됨
+  // 전체 팝오버에서만 표시되는 숨김 카테고리
+  { id: "poljjak", label: "폴짝", icon: BasketballIcon },
 ];
 
 // ─── 타입 ─────────────────────────────────────────────────────────────────────
 
 type SortId = (typeof SORT_FILTERS)[number]["id"];
 export type CategoryId = (typeof VISIBLE_CATEGORIES)[number]["id"] | "all";
+/** 전체 팝오버에만 표시되는 숨김 카테고리 ID */
+export type HiddenCategoryId = "poljjak";
 /** 정렬 탭 + 카테고리 탭 (고객센터는 NAV_TABS 링크로 별도 처리) */
-export type FilterId = SortId | CategoryId;
+export type FilterId = SortId | CategoryId | HiddenCategoryId;
 
 interface CategoryFilterProps {
   selected: FilterId;

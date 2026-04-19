@@ -15,6 +15,7 @@ export const BOARD_TAB_NAMES: Record<string, string> = {
   crypto: "크립토",
   politics: "정치",
   game: "게임",
+  poljjak: "폴짝",
 };
 
 /**

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useClock } from "@/lib/clock-context";
 import { cn } from "@/lib/utils";
 import { CheckCircle2, Clock, Eye, ThumbsUp, MessageCircle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -178,7 +179,7 @@ export function MarketCard({ market, onClick, className }: MarketCardProps) {
   const [likeCount, setLikeCount] = useState<number>(0);
   const [liked, setLiked] = useState<boolean>(false);
   const [viewCount, setViewCount] = useState<number>(0);
-  const [now, setNow] = useState(() => new Date());
+  const now = useClock();
 
   useEffect(() => {
     setLikeCount(getLikeCount(target));
@@ -208,11 +209,6 @@ export function MarketCard({ market, onClick, className }: MarketCardProps) {
       window.removeEventListener("storage", onLikesUpdated as EventListener);
     };
   }, [target, userId]);
-
-  useEffect(() => {
-    const id = window.setInterval(() => setNow(new Date()), 30_000);
-    return () => window.clearInterval(id);
-  }, []);
 
   const phase = useMemo(
     () =>

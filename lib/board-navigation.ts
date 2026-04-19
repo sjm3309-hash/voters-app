@@ -9,6 +9,7 @@ const BOARD_TAB_IDS = new Set<string>([
   "crypto",
   "politics",
   "game",
+  "poljjak",
 ]);
 
 export function isValidBoardTab(id: string | null | undefined): id is FilterId {

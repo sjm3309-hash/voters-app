@@ -158,8 +158,8 @@ export function NotificationsBell() {
   // ─── 로그인 안 된 경우 ─────────────────────────────────────────────────
   if (!userId) {
     return (
-      <button className="relative p-2 rounded-lg hover:bg-secondary transition-colors hidden sm:flex">
-        <Bell className="size-5 text-muted-foreground" />
+      <button className="relative p-2 rounded-lg border border-border/60 bg-background hover:bg-secondary transition-colors hidden sm:flex">
+        <Bell className="size-4 text-muted-foreground" />
       </button>
     );
   }
@@ -167,8 +167,8 @@ export function NotificationsBell() {
   return (
     <DropdownMenu open={open} onOpenChange={handleOpen}>
       <DropdownMenuTrigger asChild>
-        <button className="relative p-2 rounded-lg hover:bg-secondary transition-colors hidden sm:flex">
-          <Bell className={cn("size-5", hasUnread || hasPendingSettlement ? "text-foreground" : "text-muted-foreground")} />
+        <button className="relative p-2 rounded-lg border border-border/60 bg-background hover:bg-secondary transition-colors hidden sm:flex">
+          <Bell className={cn("size-4", hasUnread || hasPendingSettlement ? "text-foreground" : "text-muted-foreground")} />
           {hasPendingSettlement && (
             <span className="absolute top-1 right-1 size-2.5 rounded-full bg-chart-5 ring-2 ring-background animate-pulse" />
           )}

@@ -7,6 +7,7 @@ export function marketCategoryIdToDbLabel(id: string): string {
     crypto: "크립토",
     politics: "정치",
     game: "게임",
+    poljjak: "폴짝",
   };
   return map[id] ?? "재미";
 }
@@ -18,6 +19,7 @@ const ALLOWED = new Set<string>([
   "crypto",
   "politics",
   "game",
+  "poljjak",
 ]);
 
 export function isPublicMarketCategoryId(id: string): boolean {

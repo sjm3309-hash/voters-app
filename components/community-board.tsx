@@ -13,7 +13,6 @@ import {
   saveBoardPosts,
   type BoardPost,
 } from "@/lib/board";
-import { loadAuthUser } from "@/lib/auth";
 import { loadComments, type Comment } from "@/lib/comments";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -83,14 +82,16 @@ function PostItem({
   onClick,
   isAdmin,
   onAdminDelete,
+  currentUserId,
 }: {
   post: BoardPost;
   onClick?: () => void;
   isAdmin?: boolean;
   onAdminDelete?: (postId: string) => void;
+  currentUserId: string;
 }) {
   const thumb = post.thumbnail || post.images?.[0];
-  const userId = loadAuthUser()?.name?.trim() || "anon";
+  const userId = currentUserId;
   const target = useMemo(() => ({ type: "post" as const, id: post.id }), [post.id]);
   const [likeCount, setLikeCount] = useState<number>(0);
   const [liked, setLiked] = useState<boolean>(false);
@@ -725,6 +726,7 @@ export function CommunityBoard({
                 }}
                 isAdmin={isAdmin}
                 onAdminDelete={isAdmin ? handleAdminDelete : undefined}
+                currentUserId={currentUserId ?? "anon"}
               />
             ))}
           </div>
