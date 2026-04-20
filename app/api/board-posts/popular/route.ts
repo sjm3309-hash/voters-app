@@ -5,7 +5,8 @@ import type { BoardCategoryId, BoardPost } from "@/lib/board";
 /**
  * GET /api/board-posts/popular
  *
- * board_posts_popular_v View를 조회해 hot_score 내림차순 상위 N개를 반환합니다.
+ * board_posts 테이블에서 hot_score를 서버에서 계산해 상위 N개를 반환합니다.
+ * hot_score = (views + comment_count * 5) / (경과시간(h) + 2)^1.5
  *
  * 쿼리 파라미터:
  *   limit    - 반환 개수 (기본 20, 최대 50)
@@ -67,6 +68,15 @@ function rowToPost(row: PopularViewRow): BoardPost & { hotScore: number } {
   };
 }
 
+/** hot_score 계산: (views + 댓글수×5) / (경과시간h + 2)^1.5 */
+function calcHotScore(row: PopularViewRow): number {
+  const views = typeof row.views === "number" ? row.views : 0;
+  const comments = typeof row.comment_count === "number" ? row.comment_count : 0;
+  const createdAt = typeof row.created_at === "string" ? row.created_at : new Date().toISOString();
+  const ageHours = (Date.now() - Date.parse(createdAt)) / 3_600_000;
+  return (views + comments * 5) / Math.pow(Math.max(0, ageHours) + 2, 1.5);
+}
+
 export async function GET(request: Request) {
   try {
     const url = new URL(request.url);
@@ -85,49 +95,51 @@ export async function GET(request: Request) {
 
     const svc = createServiceRoleClient();
 
-    // ── 1. 인기글: hot_score 내림차순 ────────────────────────────────────────
-    let popularQuery = svc
-      .from("board_posts_popular_v")
+    // ── 1. 전체 글 가져오기 (점수 계산을 위해 충분히 확보) ────────────────────
+    let allQuery = svc
+      .from("board_posts")
       .select("*")
-      .order("hot_score", { ascending: false })
-      .limit(limit);
+      .order("created_at", { ascending: false })
+      .limit(200); // 최대 200개 중 점수 상위 N개 선정
 
-    if (category) popularQuery = popularQuery.eq("category", category);
+    if (category) allQuery = allQuery.eq("category", category);
 
-    const { data: popularData, error: popularError } = await popularQuery;
+    const { data: allData, error: allError } = await allQuery;
 
-    if (popularError) {
-      console.error("[board-posts/popular GET]", popularError.message);
+    if (allError) {
+      console.error("[board-posts/popular GET]", allError.message);
       return NextResponse.json(
-        { ok: false, error: "query_failed", message: popularError.message },
+        { ok: false, error: "query_failed", message: allError.message },
         { status: 500 },
       );
     }
 
-    const popularPosts = ((popularData ?? []) as PopularViewRow[]).map(rowToPost);
+    const rows = (allData ?? []) as PopularViewRow[];
 
-    // ── 2. 부족분 채우기: 최신글로 보충 (중복 제외) ──────────────────────────
+    // ── 2. 점수 계산 후 내림차순 정렬 ────────────────────────────────────────
+    const scored = rows
+      .map((r) => ({ row: r, score: calcHotScore(r) }))
+      .sort((a, b) => b.score - a.score);
+
+    // ── 3. 인기글(상위 점수) 선정 ────────────────────────────────────────────
+    const popularPosts = scored.slice(0, limit).map(({ row }) => rowToPost(row));
+
+    // ── 4. 부족분을 최신글로 채우기 (중복 제외) ───────────────────────────────
     const remaining = limit - popularPosts.length;
 
     if (remaining > 0) {
-      const excludeIds = popularPosts.map((p) => p.id);
+      const popularIds = new Set(popularPosts.map((p) => p.id));
 
-      let recentQuery = svc
-        .from("board_posts")
-        .select("*")
-        .order("created_at", { ascending: false })
-        .limit(limit); // 넉넉하게 가져온 뒤 중복 제거
+      // scored 배열은 이미 가져온 글이므로 여기서 최신순으로 재정렬해 채움
+      const recentFill = rows
+        .filter((r) => !popularIds.has(String(r.id ?? "")))
+        .sort((a, b) =>
+          Date.parse(b.created_at ?? "") - Date.parse(a.created_at ?? ""),
+        )
+        .slice(0, remaining)
+        .map(rowToPost);
 
-      if (category) recentQuery = recentQuery.eq("category", category);
-      if (excludeIds.length > 0) recentQuery = recentQuery.not("id", "in", `(${excludeIds.map((id) => `"${id}"`).join(",")})`);
-
-      const { data: recentData } = await recentQuery;
-
-      const recentPosts = ((recentData ?? []) as PopularViewRow[])
-        .map(rowToPost)
-        .slice(0, remaining);
-
-      return NextResponse.json({ ok: true, posts: [...popularPosts, ...recentPosts] });
+      return NextResponse.json({ ok: true, posts: [...popularPosts, ...recentFill] });
     }
 
     return NextResponse.json({ ok: true, posts: popularPosts });
