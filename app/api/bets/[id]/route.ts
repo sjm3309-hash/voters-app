@@ -165,6 +165,7 @@ export async function GET(
 
     let pool = 0;
     const optionTotals: Record<string, number> = {};
+    const participantSet = new Set<string>();
     let sessionUser: { id: string } | null = null;
     try {
       const authSupabase = await createClient();
@@ -186,11 +187,9 @@ export async function GET(
       if (oid) {
         optionTotals[oid] = (optionTotals[oid] ?? 0) + a;
       }
-      if (
-        sessionUser?.id &&
-        String(r.user_id ?? "").trim() === sessionUser.id &&
-        oid
-      ) {
+      const uid = String(r.user_id ?? "").trim();
+      if (uid) participantSet.add(uid);
+      if (sessionUser?.id && uid === sessionUser.id && oid) {
         myOptionTotals[oid] = (myOptionTotals[oid] ?? 0) + a;
       }
     }
@@ -217,6 +216,7 @@ export async function GET(
 
     const market = betRowToFeedWire(row, pool, optionTotals);
     market.comments = commentCount;
+    market.participants = participantSet.size;
     return NextResponse.json(
       { ok: true, market, optionTotals, myOptionTotals },
       { headers: NO_STORE_HEADERS },

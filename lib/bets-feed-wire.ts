@@ -37,6 +37,7 @@ export type BetFeedMarketWire = {
   subCategoryLabel?: string;
   options: Market["options"];
   totalPool: number;
+  participants?: number;
   comments: number;
   endsAt: string;
   createdAt?: string;

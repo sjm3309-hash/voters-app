@@ -287,7 +287,7 @@ function feedWireToMarketDetail(w: BetFeedMarketWire): MarketDetail {
     category: w.category,
     options: w.options,
     totalPool: w.totalPool,
-    participants: 0,
+    participants: w.participants ?? 0,
     endsAt: new Date(w.endsAt),
     resultAt: w.resultAt ? new Date(w.resultAt) : undefined,
     createdAt: w.createdAt ? new Date(w.createdAt) : new Date(),
