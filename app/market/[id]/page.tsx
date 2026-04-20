@@ -1118,7 +1118,7 @@ export default function MarketDetailPage() {
               <div className="flex-1 lg:w-[70%] space-y-6">
                 {/* Market Header */}
                 <div className="bg-card rounded-xl border border-border/50 p-5 md:p-6">
-              <div className="flex items-start gap-3 mb-4">
+              <div className="flex items-start gap-3 mb-4 flex-wrap">
                 <Badge
                   variant="outline"
                   className={cn(
@@ -1128,10 +1128,21 @@ export default function MarketDetailPage() {
                 >
                   {categoryLabels[market.category]}
                 </Badge>
-                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <Clock className="size-3.5" />
-                  <span>{getTimeRemaining(market.endsAt)}</span>
-                </div>
+                {isSettled ? (
+                  <span className="inline-flex items-center gap-1 text-xs font-bold text-amber-500 bg-amber-500/10 border border-amber-500/30 rounded-full px-2.5 py-0.5">
+                    <Trophy className="size-3" />
+                    결과 확정
+                  </span>
+                ) : isRefunded ? (
+                  <span className="inline-flex items-center gap-1 text-xs font-bold text-blue-400 bg-blue-500/10 border border-blue-500/25 rounded-full px-2.5 py-0.5">
+                    💸 환불 완료
+                  </span>
+                ) : (
+                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <Clock className="size-3.5" />
+                    <span>{getTimeRemaining(market.endsAt)}</span>
+                  </div>
+                )}
               </div>
 
               <div className="flex items-start justify-between gap-3 mb-4">
@@ -1277,83 +1288,151 @@ export default function MarketDetailPage() {
                   const bannerWinPool = winningOptionId
                     ? bets.filter((b) => b.optionId === winningOptionId).reduce((acc, b) => acc + b.amount, 0)
                     : 0;
-                  const { adminFee, creatorFee, dividendPool } = calculateFees(realPool, bannerWinPool);
+                  const { adminFee, creatorFee, dividendPool, scenario } = calculateFees(realPool, bannerWinPool);
+                  const confirmedDateStr = market.confirmedAt
+                    ? new Date(market.confirmedAt).toLocaleString("ko-KR", {
+                        timeZone: "Asia/Seoul",
+                        year: "numeric", month: "2-digit", day: "2-digit",
+                        hour: "2-digit", minute: "2-digit",
+                      })
+                    : null;
                   return (
                     <div
-                      className="rounded-xl border p-4 space-y-3 transition-colors duration-200"
+                      className="rounded-xl border-2 overflow-hidden transition-colors duration-200"
                       style={{
-                        borderColor: winAccent ? accentMutedBorder(winAccent) : undefined,
-                        background: winAccent
-                          ? `linear-gradient(135deg, ${accentMutedBackground(winAccent)}, transparent)`
-                          : undefined,
+                        borderColor: winAccent ?? "#f59e0b",
+                        boxShadow: winAccent
+                          ? `0 0 24px color-mix(in srgb, ${winAccent} 20%, transparent)`
+                          : "0 0 24px color-mix(in srgb, #f59e0b 15%, transparent)",
                       }}
                     >
-                      <div className="flex items-center gap-2">
-                        <Trophy className="size-5 text-yellow-400" />
-                        <span className="font-bold text-foreground">보트 정산 완료</span>
-                        {winOption && winAccent && (
+                      {/* 상단 골드 띠 + 헤더 */}
+                      <div
+                        className="px-4 py-3 flex items-center justify-between gap-3"
+                        style={{
+                          background: winAccent
+                            ? `linear-gradient(135deg, color-mix(in srgb, ${winAccent} 18%, transparent), color-mix(in srgb, ${winAccent} 6%, transparent))`
+                            : "linear-gradient(135deg, rgba(245,158,11,0.15), rgba(245,158,11,0.05))",
+                        }}
+                      >
+                        <div className="flex items-center gap-2">
+                          <Trophy className="size-5 text-amber-400 shrink-0" />
+                          <span className="font-bold text-foreground text-base">결과 확정</span>
+                          {confirmedDateStr && (
+                            <span className="text-xs text-muted-foreground hidden sm:inline">
+                              {confirmedDateStr} KST
+                            </span>
+                          )}
+                        </div>
+                        {winOption && (
                           <span
-                            className="text-sm font-semibold px-2 py-0.5 rounded-full transition-colors duration-200"
+                            className="text-sm font-bold px-3 py-1 rounded-full shrink-0"
                             style={{
-                              backgroundColor: accentMutedBackground(winAccent),
-                              color: winAccent,
+                              backgroundColor: winAccent ? accentMutedBackground(winAccent) : "rgba(245,158,11,0.12)",
+                              color: winAccent ?? "#f59e0b",
+                              border: `1px solid ${winAccent ? accentMutedBorder(winAccent) : "rgba(245,158,11,0.3)"}`,
                             }}
                           >
-                            {myPayout > 0
-                              ? `${myPayout.toLocaleString()}P 획득`
-                              : `${winOption.label} 획득`}
+                            🏆 {winOption.label}
                           </span>
                         )}
                       </div>
 
-                      {/* 페블 배분 내역 */}
-                      {realPool > 0 && (
-                        <div className="grid grid-cols-3 gap-2 text-center text-xs">
-                          <div className="rounded-lg bg-secondary/40 px-1 py-2 sm:px-2">
-                            <p className="text-muted-foreground">운영자</p>
-                            <p className="font-bold text-foreground mt-0.5 tabular-nums">{adminFee.toLocaleString()} P</p>
-                          </div>
-                          <div className="rounded-lg bg-secondary/40 px-1 py-2 sm:px-2">
-                            <p className="text-muted-foreground">창작자</p>
-                            <p className="font-bold text-foreground mt-0.5 tabular-nums">{creatorFee.toLocaleString()} P</p>
-                          </div>
-                          <div className="rounded-lg bg-secondary/40 px-1 py-2 sm:px-2">
-                            <p className="text-muted-foreground">보상 풀</p>
-                            <p className="font-bold text-foreground mt-0.5 tabular-nums">{dividendPool.toLocaleString()} P</p>
-                          </div>
-                        </div>
-                      )}
+                      <div className="px-4 pb-4 pt-3 space-y-3">
+                        {/* 확정 일시 (모바일) */}
+                        {confirmedDateStr && (
+                          <p className="text-xs text-muted-foreground sm:hidden">
+                            확정 일시: {confirmedDateStr} KST
+                          </p>
+                        )}
 
-                      {/* 페블 보상 수령 버튼 */}
-                      {canClaim && (
-                        <button
-                          type="button"
-                          onClick={handleClaim}
-                          disabled={claiming}
-                          className="w-full py-2.5 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-colors duration-200 disabled:opacity-70 disabled:cursor-not-allowed"
-                          style={{
-                            backgroundColor: winAccent ?? "var(--chart-5)",
-                            color: winAccent ? pickReadableTextOnAccent(winAccent) : "#ffffff",
-                            boxShadow: claiming ? "none" : winAccent ? `0 4px 16px ${accentMutedBorder(winAccent)}` : undefined,
-                          }}
-                        >
-                          {claiming
-                            ? <><Loader2 className="size-4 animate-spin" />처리 중…</>
-                            : <><Award className="size-4" />페블 보상 수령 — {myPayout.toLocaleString()} P</>
-                          }
-                        </button>
-                      )}
-                      {isSettled && myWinningBets > 0 && alreadyClaimed && (
-                        <div className="text-center text-sm text-muted-foreground flex items-center justify-center gap-1.5">
-                          <Award className="size-4 text-green-500" />
-                          페블 보상 수령 완료
-                        </div>
-                      )}
-                      {isSettled && myWinningBets === 0 && userId !== "anon" && (
-                        <div className="text-center text-sm text-muted-foreground">
-                          이번 보트에서 결과 선택지에 참여하지 않았습니다.
-                        </div>
-                      )}
+                        {/* 내 결과 */}
+                        {userId !== "anon" && (
+                          <div className={cn(
+                            "rounded-lg px-3 py-2.5 text-sm font-semibold flex items-center gap-2",
+                            myWinningBets > 0
+                              ? "bg-green-500/10 border border-green-500/25 text-green-600 dark:text-green-400"
+                              : "bg-secondary/40 border border-border/40 text-muted-foreground"
+                          )}>
+                            {myWinningBets > 0 ? (
+                              <>
+                                <Award className="size-4 shrink-0" />
+                                <span>적중! 내 참여: {myWinningBets.toLocaleString()} P</span>
+                                {myPayout > 0 && (
+                                  <span className="ml-auto font-bold text-green-500">
+                                    +{myPayout.toLocaleString()} P
+                                  </span>
+                                )}
+                              </>
+                            ) : (
+                              <>
+                                <span className="text-base leading-none">😔</span>
+                                <span>이번엔 아쉽게도 불일치</span>
+                              </>
+                            )}
+                          </div>
+                        )}
+
+                        {/* 페블 배분 내역 */}
+                        {realPool > 0 && (
+                          <div className="space-y-1.5">
+                            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">페블 배분 내역</p>
+                            <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                              <div className="rounded-lg bg-secondary/50 border border-border/40 px-1 py-2 sm:px-2">
+                                <p className="text-muted-foreground">운영자 수수료</p>
+                                <p className="font-bold text-foreground mt-0.5 tabular-nums">{adminFee.toLocaleString()} P</p>
+                              </div>
+                              <div className="rounded-lg bg-secondary/50 border border-border/40 px-1 py-2 sm:px-2">
+                                <p className="text-muted-foreground">창작자 수수료</p>
+                                <p className="font-bold text-foreground mt-0.5 tabular-nums">{creatorFee.toLocaleString()} P</p>
+                              </div>
+                              <div
+                                className="rounded-lg border px-1 py-2 sm:px-2"
+                                style={{
+                                  backgroundColor: winAccent ? accentMutedBackground(winAccent) : "rgba(245,158,11,0.08)",
+                                  borderColor: winAccent ? accentMutedBorder(winAccent) : "rgba(245,158,11,0.25)",
+                                }}
+                              >
+                                <p className="text-muted-foreground">보상 풀</p>
+                                <p className="font-bold mt-0.5 tabular-nums" style={{ color: winAccent ?? "#f59e0b" }}>
+                                  {dividendPool.toLocaleString()} P
+                                </p>
+                              </div>
+                            </div>
+                            {scenario !== "normal" && (
+                              <p className="text-[11px] text-amber-500 text-center">
+                                ⚠️ 역배당 방어 적용 — 최소 1.01배 보장
+                              </p>
+                            )}
+                          </div>
+                        )}
+
+                        {/* 페블 보상 수령 버튼 */}
+                        {canClaim && (
+                          <button
+                            type="button"
+                            onClick={handleClaim}
+                            disabled={claiming}
+                            className="w-full py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all duration-200 disabled:opacity-70 disabled:cursor-not-allowed"
+                            style={{
+                              backgroundColor: winAccent ?? "#f59e0b",
+                              color: winAccent ? pickReadableTextOnAccent(winAccent) : "#1e293b",
+                              boxShadow: claiming ? "none" : `0 4px 20px ${winAccent ? accentMutedBorder(winAccent) : "rgba(245,158,11,0.35)"}`,
+                            }}
+                          >
+                            {claiming
+                              ? <><Loader2 className="size-4 animate-spin" />처리 중…</>
+                              : <><Award className="size-4" />페블 보상 수령 &mdash; {myPayout.toLocaleString()} P</>
+                            }
+                          </button>
+                        )}
+                        {isSettled && myWinningBets > 0 && alreadyClaimed && (
+                          <div className="text-center text-sm font-medium flex items-center justify-center gap-1.5 text-green-500">
+                            <CheckCircle2 className="size-4" />
+                            페블 보상 수령 완료
+                          </div>
+                        )}
+                      </div>
                     </div>
                   );
                 })()}
@@ -1606,7 +1685,12 @@ export default function MarketDetailPage() {
                 {/* Chart + Comments (Desktop: split half/half) */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
                   <div className="bg-card rounded-xl border border-border/50 p-5 md:p-6 lg:min-h-[620px]">
-                    <OddsPoolChart options={derivedMarket.options} totalPool={derivedMarket.totalPool} className="h-full" />
+                    <OddsPoolChart
+                      options={derivedMarket.options}
+                      totalPool={derivedMarket.totalPool}
+                      winningOptionId={winningOptionId}
+                      className="h-full"
+                    />
                   </div>
 
                   <div className="bg-card rounded-xl border border-border/50 p-5 md:p-6 lg:min-h-[620px] flex flex-col">

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useClock } from "@/lib/clock-context";
 import { cn } from "@/lib/utils";
-import { CheckCircle2, Clock, Eye, ThumbsUp, MessageCircle } from "lucide-react";
+import { CheckCircle2, Clock, Eye, ThumbsUp, MessageCircle, Trophy } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { CategoryId } from "./category-filter";
 import { getLikeCount, hasLiked, toggleLike } from "@/lib/likes";
@@ -137,7 +137,7 @@ function timeUntilCompact(date: Date, now: Date): string {
 const PHASE_LABEL: Record<MarketLifecyclePhase, string> = {
   active: "진행 중",
   waiting: "결과 대기 중",
-  completed: "결과 확정됨",
+  completed: "결과 확정",
 };
 
 function phaseStyles(phase: MarketLifecyclePhase): {
@@ -164,9 +164,9 @@ function phaseStyles(phase: MarketLifecyclePhase): {
     case "completed":
       return {
         card:
-          "border-border/50 bg-muted/40 opacity-[0.82] grayscale-[0.88] hover:opacity-90 hover:grayscale-[0.75] hover:border-border/60",
-        badge: "border-0 bg-gray-500 text-white grayscale-0 opacity-100",
-        clock: "text-muted-foreground grayscale-0",
+          "border-amber-500/30 bg-amber-500/[0.04] hover:border-amber-500/50 hover:bg-amber-500/[0.07]",
+        badge: "border-0 bg-amber-500 text-white grayscale-0 opacity-100",
+        clock: "text-amber-600 dark:text-amber-400/90 grayscale-0",
       };
     default:
       return { card: "", badge: "", clock: "" };
@@ -174,6 +174,9 @@ function phaseStyles(phase: MarketLifecyclePhase): {
 }
 
 export function MarketCard({ market, onClick, className }: MarketCardProps) {
+  const winningOption = market.winningOptionId
+    ? market.options.find((o) => o.id === market.winningOptionId)
+    : undefined;
   const userId = loadAuthUser()?.name?.trim() || "anon";
   const target = useMemo(() => ({ type: "market" as const, id: market.id }), [market.id]);
   const [likeCount, setLikeCount] = useState<number>(0);
@@ -263,11 +266,22 @@ export function MarketCard({ market, onClick, className }: MarketCardProps) {
               boxShadow:
                 phase === "active"
                   ? `0 10px 30px -18px color-mix(in oklch, ${accent} 35%, transparent)`
-                  : undefined,
+                  : phase === "completed"
+                    ? "0 2px 12px -4px color-mix(in oklch, oklch(0.7 0.15 85) 20%, transparent)"
+                    : undefined,
             }
-          : undefined
+          : phase === "completed"
+            ? { boxShadow: "0 2px 12px -4px color-mix(in oklch, oklch(0.7 0.15 85) 15%, transparent)" }
+            : undefined
       }
     >
+      {phase === "completed" && (
+        <div
+          className="-mt-4 md:-mt-5 -mx-4 md:-mx-5 mb-3 h-1.5 rounded-t-xl opacity-80"
+          style={{ background: "linear-gradient(90deg, #f59e0b, #f97316 60%, #eab308)" }}
+          aria-hidden="true"
+        />
+      )}
       {accent && phase !== "completed" && (
         <div
           className={cn(
@@ -317,12 +331,18 @@ export function MarketCard({ market, onClick, className }: MarketCardProps) {
           )}
           <Badge
             className={cn(
-              "text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 shrink-0",
+              "inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 shrink-0",
               styles.badge,
             )}
           >
+            {phase === "completed" && <Trophy className="size-3" aria-hidden />}
             {PHASE_LABEL[phase]}
           </Badge>
+          {phase === "completed" && winningOption && (
+            <span className="text-[10px] font-semibold text-amber-600 dark:text-amber-400 bg-amber-500/10 border border-amber-500/25 px-2 py-0.5 rounded-full shrink-0 truncate max-w-[120px]">
+              🏆 {winningOption.label}
+            </span>
+          )}
         </div>
         <div
           className={cn(
@@ -351,12 +371,17 @@ export function MarketCard({ market, onClick, className }: MarketCardProps) {
         {market.options.map((option) => {
           const pct = market.totalPool > 0 ? option.percentage : 0;
           const barColor = normalizeHex6(option.color) ?? option.color;
+          const isWinner = phase === "completed" && option.id === market.winningOptionId;
+          const isLoser  = phase === "completed" && market.winningOptionId && option.id !== market.winningOptionId;
           return (
-            <div key={option.id} className="min-w-0 space-y-1">
+            <div key={option.id} className={cn("min-w-0 space-y-1", isLoser && "opacity-40")}>
               <div className="flex min-w-0 items-center justify-between gap-2 text-sm">
-                <span className="min-w-0 truncate font-medium text-foreground">{option.label}</span>
+                <span className={cn("min-w-0 truncate font-medium", isWinner ? "text-foreground font-bold" : "text-foreground")}>
+                  {isWinner && <Trophy className="inline size-3 mr-1 text-amber-400" aria-hidden />}
+                  {option.label}
+                </span>
                 <span
-                  className="font-semibold tabular-nums shrink-0"
+                  className={cn("font-semibold tabular-nums shrink-0", isWinner && "font-bold")}
                   style={{ color: barColor }}
                 >
                   {pct}%
@@ -368,7 +393,9 @@ export function MarketCard({ market, onClick, className }: MarketCardProps) {
                   style={{
                     width: `${pct}%`,
                     backgroundColor: barColor,
-                    boxShadow: `inset 0 0 0 1px color-mix(in srgb, ${barColor} 35%, transparent)`,
+                    boxShadow: isWinner
+                      ? `inset 0 0 0 1px color-mix(in srgb, ${barColor} 50%, transparent), 0 0 6px color-mix(in srgb, ${barColor} 60%, transparent)`
+                      : `inset 0 0 0 1px color-mix(in srgb, ${barColor} 35%, transparent)`,
                   }}
                 />
               </div>
@@ -381,7 +408,7 @@ export function MarketCard({ market, onClick, className }: MarketCardProps) {
         className={cn(
           "mt-auto flex items-center justify-between text-xs text-muted-foreground pt-3 border-t",
           phase === "waiting" ? "border-orange-500/25" : "border-border/50",
-          phase === "completed" && "border-border/40",
+          phase === "completed" && "border-amber-500/20",
         )}
       >
         <span className="font-medium text-foreground">
