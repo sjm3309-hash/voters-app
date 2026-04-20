@@ -129,8 +129,8 @@ export async function POST(
     );
   }
 
-  // ── 5. 배당 계산 ────────────────────────────────────────────────────────
-  const { dividendPool } = calculateFees(totalPool);
+  // ── 5. 배당 계산 (역배당 방지 3단계 시나리오 적용) ─────────────────────
+  const { dividendPool, scenario } = calculateFees(totalPool, totalWinning);
   const payout = calculateUserPayout(myWinning, totalWinning, dividendPool);
 
   if (payout <= 0) {
@@ -175,5 +175,5 @@ export async function POST(
     description: `🏆 보트 당첨 수령 — 배당 ${payout.toLocaleString()}P`,
   });
 
-  return NextResponse.json({ ok: true, payout, balance: result.balance });
+  return NextResponse.json({ ok: true, payout, balance: result.balance, scenario });
 }

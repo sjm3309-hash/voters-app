@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeft, Award, CheckCircle2, Clock, Coins, ExternalLink, Eye, Loader2, Pencil, ThumbsUp, TrendingUp, Trophy, Users, X } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Award, CheckCircle2, Clock, Coins, ExternalLink, Eye, Loader2, Pencil, ThumbsUp, TrendingUp, Trophy, Users, X } from "lucide-react";
 import { ReportButton } from "@/components/report-button";
 import { DislikeButton } from "@/components/dislike-button";
 import { Navbar } from "@/components/navbar";
@@ -701,19 +701,27 @@ export default function MarketDetailPage() {
     return { entries, total };
   }, [betsByAuthor, userId, myStakeByOption, marketId]);
 
-  /** 내가 베팅한 선택지별 현재 예상 배당 (Realtime 풀 변동에 따라 자동 갱신) */
+  /** 내가 베팅한 선택지별 현재 예상 배당 (Realtime 풀 변동에 따라 자동 갱신, 역배당 방어 알고리즘 적용) */
   const myExpectedPayouts = useMemo(() => {
     if (myBetSummary.total <= 0) return [];
+    const totalPool = bets.reduce((acc, b) => acc + b.amount, 0);
     return myBetSummary.entries.map(([optId, myAmt]) => {
       const optIdx = derivedMarket.options.findIndex((o) => o.id === optId);
       const opt = optIdx >= 0 ? derivedMarket.options[optIdx] : undefined;
-      const pct = opt?.percentage ?? 0;
-      const expected = pct > 0 ? calculateExpectedPayout(myAmt, pct) : 0;
       const label = opt?.label ?? optionLabelByIdDerived.get(optId) ?? optId;
       const fillColor = opt ? resolveOptionColor(opt.color, optIdx) : "var(--chart-5)";
-      return { optId, myAmt, expected, label, fillColor };
+      const optionPool = bets.filter((b) => b.optionId === optId).reduce((acc, b) => acc + b.amount, 0);
+      const opposingPool = totalPool - optionPool;
+      // 반대편 베팅이 없으면 전액 환불 예정
+      if (opposingPool === 0) {
+        return { optId, myAmt, expected: 0, label, fillColor, isOneSided: true, scenario: "defense2" as const };
+      }
+      // 역배당 방어 알고리즘으로 실제 예상 배당 계산
+      const { dividendPool, scenario } = calculateFees(totalPool, optionPool);
+      const expected = calculateUserPayout(myAmt, optionPool, dividendPool);
+      return { optId, myAmt, expected, label, fillColor, isOneSided: false, scenario };
     });
-  }, [myBetSummary, derivedMarket.options, optionLabelByIdDerived]);
+  }, [myBetSummary, bets, derivedMarket.options, optionLabelByIdDerived]);
 
   if (feedLoading && !market) {
     return (
@@ -897,7 +905,8 @@ export default function MarketDetailPage() {
     if (!market || settling) return;
 
     const realPool = bets.reduce((acc, b) => acc + b.amount, 0);
-    const { adminFee, creatorFee } = calculateFees(realPool);
+    const winPool  = bets.filter((b) => b.optionId === winningOptionId).reduce((acc, b) => acc + b.amount, 0);
+    const { adminFee, creatorFee } = calculateFees(realPool, winPool);
 
     setSettling(true);
     let wasNoContest = false;
@@ -995,7 +1004,7 @@ export default function MarketDetailPage() {
     ? bets.filter((b) => b.optionId === winningOptionId).reduce((acc, b) => acc + b.amount, 0)
     : 0;
 
-  const { dividendPool } = calculateFees(realPool);
+  const { dividendPool } = calculateFees(realPool, totalWinningBets);
   const myPayout = calculateUserPayout(myWinningBets, totalWinningBets, dividendPool);
   const alreadyClaimed = isSettled ? hasClaimedWinnings(userId, marketId) : false;
   const canClaim = isSettled && myWinningBets > 0 && myPayout > 0 && !alreadyClaimed && userId !== "anon";
@@ -1265,7 +1274,10 @@ export default function MarketDetailPage() {
                   const winAccent = winOption
                     ? resolveOptionColor(winOption.color, winIdx >= 0 ? winIdx : 0)
                     : undefined;
-                  const { adminFee, creatorFee, dividendPool } = calculateFees(realPool);
+                  const bannerWinPool = winningOptionId
+                    ? bets.filter((b) => b.optionId === winningOptionId).reduce((acc, b) => acc + b.amount, 0)
+                    : 0;
+                  const { adminFee, creatorFee, dividendPool } = calculateFees(realPool, bannerWinPool);
                   return (
                     <div
                       className="rounded-xl border p-4 space-y-3 transition-colors duration-200"
@@ -1395,7 +1407,14 @@ export default function MarketDetailPage() {
                       <div className="space-y-3 border-t border-border/40 bg-card px-4 pb-4 pt-3">
                         {/* 수수료 미리보기 */}
                         {realPool > 0 && (() => {
-                          const { adminFee, creatorFee, dividendPool } = calculateFees(realPool);
+                          // 당첨 선택지 미확정 → 가장 많이 베팅된 선택지를 기준으로 수수료 미리보기
+                          const previewWinPool = Math.max(
+                            1,
+                            ...market.options.map((opt) =>
+                              bets.filter((b) => b.optionId === opt.id).reduce((acc, b) => acc + b.amount, 0),
+                            ),
+                          );
+                          const { adminFee, creatorFee, dividendPool } = calculateFees(realPool, previewWinPool);
                           const isCreator = market.authorId === userId;
                           return (
                             <div className="rounded-lg bg-secondary/20 px-3 py-3 space-y-2">
@@ -1469,7 +1488,10 @@ export default function MarketDetailPage() {
                   const opt = pendingSettleOption;
                   const optIdx = market.options.findIndex((o) => o.id === opt.id);
                   const accent = resolveOptionColor(opt.color, optIdx >= 0 ? optIdx : 0);
-                  const { creatorFee } = calculateFees(realPool);
+                  const dialogWinPool = bets
+                    .filter((b) => b.optionId === opt.id)
+                    .reduce((acc, b) => acc + b.amount, 0);
+                  const { creatorFee } = calculateFees(realPool, Math.max(1, dialogWinPool));
                   const isCreator = market.authorId === userId;
                   const totalEarnings = isCreator ? (likesEarned + creatorFee) : likesEarned;
                   return (
@@ -1616,21 +1638,29 @@ export default function MarketDetailPage() {
                     <div className="mb-4 rounded-lg border border-border/50 bg-secondary/10 px-4 py-3">
                       <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">내 보트 현황</div>
                       <div className="space-y-2">
-                        {myExpectedPayouts.map(({ optId, myAmt, expected, label, fillColor }) => (
+                        {myExpectedPayouts.map(({ optId, myAmt, expected, label, fillColor, isOneSided, scenario }) => (
                           <div key={optId} className="rounded-lg bg-card border border-border/40 px-3 py-2">
                             <div className="flex items-center justify-between gap-2">
                               <span className="text-xs font-semibold truncate" style={{ color: fillColor }}>{label}</span>
                               <span className="text-xs tabular-nums text-muted-foreground shrink-0">{myAmt.toLocaleString()} P 참여</span>
                             </div>
-                            {expected > 0 && (
+                            {isOneSided ? (
+                              <div className="mt-1 flex items-center gap-1 text-amber-500">
+                                <AlertTriangle className="size-3 shrink-0" />
+                                <span className="text-xs font-medium">반대편 베팅 없음 — 종료 시 환불 예정</span>
+                              </div>
+                            ) : expected > 0 ? (
                               <div className="mt-1 flex items-center gap-1">
                                 <TrendingUp className="size-3 shrink-0" style={{ color: fillColor }} />
                                 <span className="text-xs text-muted-foreground">적중 시</span>
                                 <span className="text-sm font-bold tabular-nums" style={{ color: fillColor }}>
                                   ~{expected.toLocaleString()} P
                                 </span>
+                                {scenario !== "normal" && (
+                                  <span className="text-[10px] text-amber-500 font-medium ml-0.5">(최소 1.01배)</span>
+                                )}
                               </div>
-                            )}
+                            ) : null}
                           </div>
                         ))}
                         <div className="text-[10px] text-muted-foreground pt-0.5">
@@ -1694,21 +1724,29 @@ export default function MarketDetailPage() {
                       <div className="text-sm text-muted-foreground">아직 걸린 페블이 없습니다.</div>
                     ) : (
                       <div className="space-y-2">
-                        {myExpectedPayouts.map(({ optId, myAmt, expected, label, fillColor }) => (
+                        {myExpectedPayouts.map(({ optId, myAmt, expected, label, fillColor, isOneSided, scenario }) => (
                           <div key={optId} className="rounded-lg bg-card border border-border/40 px-3 py-2">
                             <div className="flex items-center justify-between gap-2">
                               <span className="text-xs font-semibold truncate" style={{ color: fillColor }}>{label}</span>
                               <span className="text-xs tabular-nums text-muted-foreground shrink-0">{myAmt.toLocaleString()} P 참여</span>
                             </div>
-                            {expected > 0 && (
+                            {isOneSided ? (
+                              <div className="mt-1 flex items-center gap-1 text-amber-500">
+                                <AlertTriangle className="size-3 shrink-0" />
+                                <span className="text-xs font-medium">반대편 베팅 없음 — 종료 시 환불 예정</span>
+                              </div>
+                            ) : expected > 0 ? (
                               <div className="mt-1 flex items-center gap-1">
                                 <TrendingUp className="size-3 shrink-0" style={{ color: fillColor }} />
                                 <span className="text-xs text-muted-foreground">적중 시</span>
                                 <span className="text-sm font-bold tabular-nums" style={{ color: fillColor }}>
                                   ~{expected.toLocaleString()} P
                                 </span>
+                                {scenario !== "normal" && (
+                                  <span className="text-[10px] text-amber-500 font-medium ml-0.5">(최소 1.01배)</span>
+                                )}
                               </div>
-                            )}
+                            ) : null}
                           </div>
                         ))}
                         <div className="text-[10px] text-muted-foreground pt-0.5">
