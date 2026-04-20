@@ -164,9 +164,9 @@ function phaseStyles(phase: MarketLifecyclePhase): {
     case "completed":
       return {
         card:
-          "border-amber-500/30 bg-amber-500/[0.04] hover:border-amber-500/50 hover:bg-amber-500/[0.07]",
-        badge: "border-0 bg-amber-500 text-white grayscale-0 opacity-100",
-        clock: "text-amber-600 dark:text-amber-400/90 grayscale-0",
+          "border-border/60 bg-muted/30 hover:border-border/80 hover:bg-muted/50",
+        badge: "border-0 bg-slate-500 text-white grayscale-0 opacity-100",
+        clock: "text-muted-foreground grayscale-0",
       };
     default:
       return { card: "", badge: "", clock: "" };
@@ -255,7 +255,7 @@ export function MarketCard({ market, onClick, className }: MarketCardProps) {
         className,
       )}
       style={
-        accent
+        accent && phase !== "completed"
           ? {
               borderColor:
                 phase === "active"
@@ -266,19 +266,14 @@ export function MarketCard({ market, onClick, className }: MarketCardProps) {
               boxShadow:
                 phase === "active"
                   ? `0 10px 30px -18px color-mix(in oklch, ${accent} 35%, transparent)`
-                  : phase === "completed"
-                    ? "0 2px 12px -4px color-mix(in oklch, oklch(0.7 0.15 85) 20%, transparent)"
-                    : undefined,
+                  : undefined,
             }
-          : phase === "completed"
-            ? { boxShadow: "0 2px 12px -4px color-mix(in oklch, oklch(0.7 0.15 85) 15%, transparent)" }
-            : undefined
+          : undefined
       }
     >
       {phase === "completed" && (
         <div
-          className="-mt-4 md:-mt-5 -mx-4 md:-mx-5 mb-3 h-1.5 rounded-t-xl opacity-80"
-          style={{ background: "linear-gradient(90deg, #f59e0b, #f97316 60%, #eab308)" }}
+          className="-mt-4 md:-mt-5 -mx-4 md:-mx-5 mb-3 h-1 rounded-t-xl bg-border/60"
           aria-hidden="true"
         />
       )}
@@ -339,7 +334,7 @@ export function MarketCard({ market, onClick, className }: MarketCardProps) {
             {PHASE_LABEL[phase]}
           </Badge>
           {phase === "completed" && winningOption && (
-            <span className="text-[10px] font-semibold text-amber-600 dark:text-amber-400 bg-amber-500/10 border border-amber-500/25 px-2 py-0.5 rounded-full shrink-0 truncate max-w-[120px]">
+            <span className="text-[10px] font-semibold text-foreground/70 bg-secondary/60 border border-border/60 px-2 py-0.5 rounded-full shrink-0 truncate max-w-[120px]">
               🏆 {winningOption.label}
             </span>
           )}
@@ -408,7 +403,7 @@ export function MarketCard({ market, onClick, className }: MarketCardProps) {
         className={cn(
           "mt-auto flex items-center justify-between text-xs text-muted-foreground pt-3 border-t",
           phase === "waiting" ? "border-orange-500/25" : "border-border/50",
-          phase === "completed" && "border-amber-500/20",
+          phase === "completed" && "border-border/40",
         )}
       >
         <span className="font-medium text-foreground">
