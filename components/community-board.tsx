@@ -390,7 +390,9 @@ export function CommunityBoard({
 
       if (hotPosts.length > 0) return hotPosts;
 
-      return scored.sort((a, b) => b.score - a.score).map(({ post }) => post);
+      return scored
+        .sort((a, b) => toDate(b.post.createdAt).getTime() - toDate(a.post.createdAt).getTime())
+        .map(({ post }) => post);
     }
 
     return [...filtered].sort(
