@@ -7,6 +7,18 @@
     {
       "path": "/api/cleanup-old-bets",
       "schedule": "0 2 * * *"
+    },
+    {
+      "path": "/api/cron/bots",
+      "schedule": "0 0 * * *"
+    },
+    {
+      "path": "/api/cron/bots",
+      "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/cron/bots",
+      "schedule": "0 11 * * *"
     }
   ]
 }

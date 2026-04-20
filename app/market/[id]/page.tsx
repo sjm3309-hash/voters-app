@@ -1647,7 +1647,7 @@ export default function MarketDetailPage() {
                             {isOneSided ? (
                               <div className="mt-1 flex items-center gap-1 text-amber-500">
                                 <AlertTriangle className="size-3 shrink-0" />
-                                <span className="text-xs font-medium">반대편 베팅 없음 — 종료 시 환불 예정</span>
+                                <span className="text-xs font-medium">반대편 보트 없음 — 종료 시 환불 예정</span>
                               </div>
                             ) : expected > 0 ? (
                               <div className="mt-1 flex items-center gap-1">
@@ -1733,7 +1733,7 @@ export default function MarketDetailPage() {
                             {isOneSided ? (
                               <div className="mt-1 flex items-center gap-1 text-amber-500">
                                 <AlertTriangle className="size-3 shrink-0" />
-                                <span className="text-xs font-medium">반대편 베팅 없음 — 종료 시 환불 예정</span>
+                                <span className="text-xs font-medium">반대편 보트 없음 — 종료 시 환불 예정</span>
                               </div>
                             ) : expected > 0 ? (
                               <div className="mt-1 flex items-center gap-1">
