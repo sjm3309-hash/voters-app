@@ -123,14 +123,7 @@ export async function GET(request: Request) {
       query = query.or(`title.ilike.%${escaped}%,content.ilike.%${escaped}%`);
     }
 
-    if (sort === "hot") {
-      query = query
-        .order("views", { ascending: false })
-        .order("comment_count", { ascending: false })
-        .order("created_at", { ascending: false });
-    } else {
-      query = query.order("created_at", { ascending: false });
-    }
+    query = query.order("created_at", { ascending: false });
 
     const { data, error, count } = await query.range(from, to);
 
