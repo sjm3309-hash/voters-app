@@ -85,29 +85,52 @@ export async function GET(request: Request) {
 
     const svc = createServiceRoleClient();
 
-    let query = svc
+    // ── 1. 인기글: hot_score 내림차순 ────────────────────────────────────────
+    let popularQuery = svc
       .from("board_posts_popular_v")
       .select("*")
       .order("hot_score", { ascending: false })
       .limit(limit);
 
-    if (category) {
-      query = query.eq("category", category);
-    }
+    if (category) popularQuery = popularQuery.eq("category", category);
 
-    const { data, error } = await query;
+    const { data: popularData, error: popularError } = await popularQuery;
 
-    if (error) {
-      console.error("[board-posts/popular GET]", error.message);
+    if (popularError) {
+      console.error("[board-posts/popular GET]", popularError.message);
       return NextResponse.json(
-        { ok: false, error: "query_failed", message: error.message },
+        { ok: false, error: "query_failed", message: popularError.message },
         { status: 500 },
       );
     }
 
-    const posts = ((data ?? []) as PopularViewRow[]).map(rowToPost);
+    const popularPosts = ((popularData ?? []) as PopularViewRow[]).map(rowToPost);
 
-    return NextResponse.json({ ok: true, posts });
+    // ── 2. 부족분 채우기: 최신글로 보충 (중복 제외) ──────────────────────────
+    const remaining = limit - popularPosts.length;
+
+    if (remaining > 0) {
+      const excludeIds = popularPosts.map((p) => p.id);
+
+      let recentQuery = svc
+        .from("board_posts")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(limit); // 넉넉하게 가져온 뒤 중복 제거
+
+      if (category) recentQuery = recentQuery.eq("category", category);
+      if (excludeIds.length > 0) recentQuery = recentQuery.not("id", "in", `(${excludeIds.map((id) => `"${id}"`).join(",")})`);
+
+      const { data: recentData } = await recentQuery;
+
+      const recentPosts = ((recentData ?? []) as PopularViewRow[])
+        .map(rowToPost)
+        .slice(0, remaining);
+
+      return NextResponse.json({ ok: true, posts: [...popularPosts, ...recentPosts] });
+    }
+
+    return NextResponse.json({ ok: true, posts: popularPosts });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     return NextResponse.json({ ok: false, error: msg }, { status: 500 });
