@@ -187,15 +187,6 @@ export function PointsHistoryDialog({
       .finally(() => setDbLoading(false));
   }, [open, userId]);
 
-  const earned = useMemo(
-    () => history.filter((t) => t.amount > 0).reduce((s, t) => s + t.amount, 0),
-    [history],
-  );
-  const spent = useMemo(
-    () => history.filter((t) => t.amount < 0).reduce((s, t) => s + Math.abs(t.amount), 0),
-    [history],
-  );
-
   const filtered = useMemo(() => {
     if (tab === "earn")  return history.filter((t) => t.amount > 0);
     if (tab === "spend") return history.filter((t) => t.amount < 0);
@@ -224,29 +215,13 @@ export function PointsHistoryDialog({
 
         {/* 잔액 요약 */}
         <div className="px-5 py-4 bg-chart-5/5 border-b border-border/30">
-          <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center justify-between">
             <div>
               <p className="text-[11px] text-muted-foreground mb-0.5">현재 보유</p>
               <p className="text-2xl font-bold text-chart-5 tabular-nums">
                 {currentPoints.toLocaleString()}
                 <span className="text-sm font-normal text-muted-foreground ml-1">P</span>
               </p>
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <div className="rounded-lg bg-emerald-500/10 border border-emerald-500/20 px-3 py-2">
-              <div className="flex items-center gap-1 mb-0.5">
-                <ArrowDownLeft className="size-3 text-emerald-400" />
-                <span className="text-[11px] text-muted-foreground">총 획득</span>
-              </div>
-              <p className="text-sm font-bold text-emerald-400 tabular-nums">+{earned.toLocaleString()} P</p>
-            </div>
-            <div className="rounded-lg bg-rose-500/10 border border-rose-500/20 px-3 py-2">
-              <div className="flex items-center gap-1 mb-0.5">
-                <ArrowUpRight className="size-3 text-rose-400" />
-                <span className="text-[11px] text-muted-foreground">총 사용</span>
-              </div>
-              <p className="text-sm font-bold text-rose-400 tabular-nums">-{spent.toLocaleString()} P</p>
             </div>
           </div>
         </div>

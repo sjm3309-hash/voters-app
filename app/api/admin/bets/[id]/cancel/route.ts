@@ -89,6 +89,15 @@ export async function POST(
     for (const [userId, amount] of refundMap) {
       const r = await adjustPebblesAtomic(userId, amount);
       refundResults.push({ userId, amount, ok: r.ok, error: r.ok ? undefined : r.error });
+      if (r.ok) {
+        void svc.from("pebble_transactions").insert({
+          user_id: userId,
+          amount,
+          balance_after: r.balance,
+          type: "bet_refund",
+          description: `↩ 보트 취소 환불 — ${amount.toLocaleString()}P`,
+        });
+      }
     }
 
     const succeeded = refundResults.filter((r) => r.ok).length;

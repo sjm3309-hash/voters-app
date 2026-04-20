@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/utils/supabase/server";
+import { createServiceRoleClient } from "@/utils/supabase/service-role";
 import { adjustPebblesAtomic } from "@/lib/pebbles-db";
 
 type Body = {
@@ -40,6 +41,17 @@ export async function POST(request: Request) {
     if (!result.ok) {
       return NextResponse.json({ ok: false, error: result.error }, { status: 500 });
     }
+
+    // pebble_transactions 기록
+    const svc = createServiceRoleClient();
+    const reason = typeof body?.reason === "string" && body.reason.trim() ? body.reason.trim() : "페블 획득";
+    void svc.from("pebble_transactions").insert({
+      user_id: targetUserId,
+      amount,
+      balance_after: result.balance,
+      type: "reward",
+      description: reason,
+    });
 
     return NextResponse.json({ ok: true, balance: result.balance, targetUserId });
   } catch (e) {
