@@ -469,19 +469,31 @@ export function CommunityBoard({
     async function run() {
       setRemoteLoading(true);
       try {
-        const params = new URLSearchParams();
-        params.set("page", String(pageFromUrl));
-        params.set("limit", String(PAGE_SIZE));
-        params.set("sort", sortApiParam);
-        if (filterCategory) params.set("category", filterCategory);
-        if (combinedSearch.length > 0) params.set("q", combinedSearch);
+        let res: Response;
 
-        const res = await fetch(`/api/board-posts?${params.toString()}`, {
-          credentials: "same-origin",
-          ...(combinedSearch.length > 0
-            ? { cache: "no-store" }
-            : { next: { revalidate: 60 } }),
-        });
+        if (sortApiParam === "hot" && combinedSearch.length === 0) {
+          // 인기 게시판 전용 엔드포인트: hot_score 내림차순 상위 20개
+          const params = new URLSearchParams();
+          params.set("limit", "20");
+          if (filterCategory) params.set("category", filterCategory);
+          res = await fetch(`/api/board-posts/popular?${params.toString()}`, {
+            credentials: "same-origin",
+          });
+        } else {
+          const params = new URLSearchParams();
+          params.set("page", String(pageFromUrl));
+          params.set("limit", String(PAGE_SIZE));
+          params.set("sort", sortApiParam);
+          if (filterCategory) params.set("category", filterCategory);
+          if (combinedSearch.length > 0) params.set("q", combinedSearch);
+          res = await fetch(`/api/board-posts?${params.toString()}`, {
+            credentials: "same-origin",
+            ...(combinedSearch.length > 0
+              ? { cache: "no-store" }
+              : { next: { revalidate: 60 } }),
+          });
+        }
+
         const j = (await res.json().catch(() => ({}))) as {
           ok?: boolean;
           posts?: BoardPost[];
@@ -516,17 +528,29 @@ export function CommunityBoard({
       const { pageFromUrl: p, sortApiParam: s, filterCategory: fc, combinedSearch: cs } =
         fetchParamsRef.current;
       try {
-        const params = new URLSearchParams();
-        params.set("page", String(p));
-        params.set("limit", String(PAGE_SIZE));
-        params.set("sort", s);
-        if (fc) params.set("category", fc);
-        if (cs.length > 0) params.set("q", cs);
+        let res: Response;
 
-        const res = await fetch(`/api/board-posts?${params.toString()}`, {
-          credentials: "same-origin",
-          cache: "no-store",
-        });
+        if (s === "hot" && cs.length === 0) {
+          const params = new URLSearchParams();
+          params.set("limit", "20");
+          if (fc) params.set("category", fc);
+          res = await fetch(`/api/board-posts/popular?${params.toString()}`, {
+            credentials: "same-origin",
+            cache: "no-store",
+          });
+        } else {
+          const params = new URLSearchParams();
+          params.set("page", String(p));
+          params.set("limit", String(PAGE_SIZE));
+          params.set("sort", s);
+          if (fc) params.set("category", fc);
+          if (cs.length > 0) params.set("q", cs);
+          res = await fetch(`/api/board-posts?${params.toString()}`, {
+            credentials: "same-origin",
+            cache: "no-store",
+          });
+        }
+
         const j = (await res.json().catch(() => ({}))) as {
           ok?: boolean;
           posts?: BoardPost[];
