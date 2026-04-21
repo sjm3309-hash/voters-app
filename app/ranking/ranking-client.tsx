@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { Trophy, ArrowUp, ArrowDown, Minus, ChevronLeft, ChevronRight, ArrowLeft } from "lucide-react";
+import { Trophy, ArrowUp, ArrowDown, Minus, ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { createClient } from "@/utils/supabase/client";
 import { LevelIcon } from "@/components/level-icon";
@@ -9,7 +9,7 @@ import type { RankingEntry } from "@/app/api/ranking/route";
 import { cn } from "@/lib/utils";
 
 const MEDALS = ["🥇", "🥈", "🥉"];
-const PAGE_SIZE = 100;
+const PAGE_SIZE = 20;
 
 function RankChangeChip({ change }: { change: number | null }) {
   if (change === null) return <span className="text-xs text-muted-foreground">NEW</span>;
@@ -130,8 +130,6 @@ function MyRankPanel({ myRank }: { myRank: RankingEntry | null }) {
 
 export function RankingClient() {
   const [rankings, setRankings] = useState<RankingEntry[]>([]);
-  const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [myUserId, setMyUserId] = useState<string | null>(null);
   const [myRank, setMyRank] = useState<RankingEntry | null>(null);
@@ -144,11 +142,11 @@ export function RankingClient() {
     });
   }, []);
 
-  const fetchRankings = useCallback(async (p: number, uid: string | null) => {
+  const fetchRankings = useCallback(async (uid: string | null) => {
     setLoading(true);
     try {
       const params = new URLSearchParams({
-        page: String(p),
+        page: "1",
         limit: String(PAGE_SIZE),
       });
       if (uid) params.set("myUserId", uid);
@@ -157,13 +155,11 @@ export function RankingClient() {
       const json = (await res.json()) as {
         ok: boolean;
         rankings?: RankingEntry[];
-        total?: number;
         myRank?: RankingEntry | null;
       };
 
       if (json.ok) {
         setRankings(json.rankings ?? []);
-        setTotal(json.total ?? 0);
         setMyRank(json.myRank ?? null);
       }
     } finally {
@@ -172,10 +168,8 @@ export function RankingClient() {
   }, []);
 
   useEffect(() => {
-    void fetchRankings(page, myUserId);
-  }, [fetchRankings, page, myUserId]);
-
-  const totalPages = Math.ceil(total / PAGE_SIZE);
+    void fetchRankings(myUserId);
+  }, [fetchRankings, myUserId]);
 
   return (
     <div className="min-h-screen bg-background">
@@ -193,7 +187,7 @@ export function RankingClient() {
           <div>
             <h1 className="text-xl font-bold">유저 순위</h1>
             <p className="text-xs text-muted-foreground mt-0.5">
-              총 포인트 기준 실시간 집계 (레벨업 누적 + 보유 페블)
+              총 포인트 기준 TOP 20 (레벨업 누적 + 보유 페블)
             </p>
           </div>
         </div>
@@ -226,33 +220,6 @@ export function RankingClient() {
               </div>
             )}
 
-            {/* 페이지네이션 */}
-            {totalPages > 1 && (
-              <div className="flex items-center justify-between px-4 py-3 border-t border-border/40">
-                <span className="text-xs text-muted-foreground tabular-nums">
-                  {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, total)}위 / 총 {total}명
-                </span>
-                <div className="flex items-center gap-1">
-                  <button
-                    onClick={() => setPage((p) => Math.max(1, p - 1))}
-                    disabled={page === 1}
-                    className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-md hover:bg-secondary/60 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                  >
-                    <ChevronLeft className="size-4" />
-                  </button>
-                  <span className="text-xs font-medium tabular-nums px-2">
-                    {page} / {totalPages}
-                  </span>
-                  <button
-                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                    disabled={page === totalPages}
-                    className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-md hover:bg-secondary/60 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                  >
-                    <ChevronRight className="size-4" />
-                  </button>
-                </div>
-              </div>
-            )}
           </div>
 
           {/* 내 순위 패널 */}
