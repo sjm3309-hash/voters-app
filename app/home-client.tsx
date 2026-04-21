@@ -625,8 +625,7 @@ export function HomeClient() {
 
       {/* Unified Filter List + Leaderboard */}
       <div className="px-4 py-4 border-b border-border/50">
-        <div className="grid grid-cols-1 xl:grid-cols-[10%_minmax(0,1fr)_10%] items-center gap-4">
-          <aside className="hidden xl:block" />
+        <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_300px] items-center gap-4">
           {/* 카테고리 탭 + 유저 순위를 한 행으로 */}
           <div className="flex flex-wrap items-center gap-3 min-w-0">
             <div className="flex-1 min-w-0 basis-full sm:basis-auto">
@@ -723,17 +722,12 @@ export function HomeClient() {
       </div>
 
       <main className="px-4 pt-0 pb-6 md:pt-0 md:pb-8">
-        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-[10%_minmax(0,7fr)_minmax(0,5fr)_10%] gap-6 lg:gap-8">
-          {/* Left Ad Space */}
-          <aside className="hidden xl:block">
-            <div className="h-full rounded-xl border border-border/40 bg-secondary/10" />
-          </aside>
-
+        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-[minmax(0,7fr)_minmax(0,5fr)_300px] gap-6 lg:gap-8">
           {/* split 모드: 데스크탑 2컬럼 / 모바일은 이 분기 자체가 없으므로 방어 렌더 */}
           {viewMode === "split" && (
             <>
               {/* 데스크탑: 보트 피드 */}
-              <section className="min-w-0 xl:col-start-2">
+              <section className="min-w-0 xl:col-start-1">
                 <BetFeedListSection
                   markets={filteredMarkets}
                   hasMore={feedHasMore}
@@ -745,7 +739,7 @@ export function HomeClient() {
                 />
               </section>
               {/* 데스크탑: 게시판 사이드 (모바일에서는 hidden) */}
-              <aside className="hidden md:block lg:sticky lg:top-[88px] h-[560px] lg:h-[calc(100vh-120px)] xl:col-start-3">
+              <aside className="hidden md:block lg:sticky lg:top-[88px] h-[560px] lg:h-[calc(100vh-120px)] xl:col-start-2">
                 <CommunityBoard
                   activeFilter={feedTab}
                   activeSubTabId={boardActiveSubTabId}
@@ -760,7 +754,7 @@ export function HomeClient() {
           {viewMode === "board" && (
             <div
               className={cn(
-                "min-w-0 xl:col-start-2 xl:col-end-4",
+                "min-w-0 xl:col-start-1 xl:col-end-3",
                 "grid grid-cols-1 gap-6 lg:gap-6 lg:items-start",
                 "lg:grid-cols-[minmax(0,1fr)_minmax(200px,260px)]",
               )}
@@ -796,7 +790,7 @@ export function HomeClient() {
           {viewMode === "bets" && (
             <div
               className={cn(
-                "min-w-0 xl:col-start-2 xl:col-end-4",
+                "min-w-0 xl:col-start-1 xl:col-end-3",
                 "grid grid-cols-1 gap-6 lg:gap-6 lg:items-start",
                 "lg:grid-cols-[minmax(0,1fr)_minmax(200px,260px)]",
               )}
@@ -825,8 +819,19 @@ export function HomeClient() {
           )}
 
           {/* Right Ad Space */}
-          <aside className="hidden xl:block xl:col-start-4">
-            <div className="h-full rounded-xl border border-border/40 bg-secondary/10" />
+          <aside className="hidden xl:flex xl:col-start-3 flex-col gap-4 sticky top-[88px] self-start max-h-[calc(100vh-120px)] overflow-y-auto">
+            <AdSlot
+              slot={process.env.NEXT_PUBLIC_AD_SLOT_RIGHT_TOP ?? "0000000001"}
+              format="rectangle"
+              label="광고"
+              className="w-[300px]"
+            />
+            <AdSlot
+              slot={process.env.NEXT_PUBLIC_AD_SLOT_RIGHT_BOTTOM ?? "0000000002"}
+              format="vertical"
+              label="광고"
+              className="w-[300px]"
+            />
           </aside>
         </div>
       </main>
