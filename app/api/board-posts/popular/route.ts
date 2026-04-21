@@ -96,9 +96,16 @@ export async function GET(request: Request) {
     const svc = createServiceRoleClient();
 
     // ── 1. 전체 글 가져오기 (점수 계산을 위해 충분히 확보) ────────────────────
+    // images(JSONB), content_html 은 목록에서 불필요하므로 제외해 페이로드 축소
+    const LIST_COLUMNS = [
+      "id", "title", "content", "category", "sub_category",
+      "author_name", "author_id", "thumbnail_url",
+      "views", "comment_count", "is_hot", "created_at", "updated_at",
+    ].join(", ");
+
     let allQuery = svc
       .from("board_posts")
-      .select("*")
+      .select(LIST_COLUMNS)
       .order("created_at", { ascending: false })
       .limit(200); // 최대 200개 중 점수 상위 N개 선정
 

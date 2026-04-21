@@ -18,7 +18,7 @@ import {
 } from "@/components/ui/select";
 import { type BoardCategoryId } from "@/lib/board";
 import { safeReturnPath } from "@/lib/board-navigation";
-import { boardImageFileToDataUrl, BOARD_IMAGE_MAX_PICK_MB } from "@/lib/board-image-data-url";
+import { uploadBoardImage, BOARD_IMAGE_MAX_PICK_MB } from "@/lib/board-image-upload";
 import { checkAndGrantFirstPost } from "@/lib/daily-rewards";
 import { useUserPointsBalance } from "@/lib/points";
 import { getSubCategories, hasSubCategories, defaultSubCategory } from "@/lib/subcategories";
@@ -88,8 +88,12 @@ export function BoardWriteClient() {
   );
   const [title, setTitle] = useState("");
   const [contentHtml, setContentHtml] = useState("");
+  /** 상세 페이지용 full URL 목록 */
   const [images, setImages] = useState<string[]>([]);
+  /** 목록/홈 썸네일용 URL 목록 (images 와 1:1 대응) */
+  const [thumbImages, setThumbImages] = useState<string[]>([]);
   const [imageError, setImageError] = useState<string | null>(null);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
 
   useEffect(() => {
     setCategory(initialCategory);
@@ -98,7 +102,7 @@ export function BoardWriteClient() {
 
   const plainText = useMemo(() => stripHtml(contentHtml), [contentHtml]);
   const hasBody = plainText.length > 0 || images.length > 0;
-  const canSubmit = !!title.trim() && hasBody && !isSubmitting;
+  const canSubmit = !!title.trim() && hasBody && !isSubmitting && !isUploadingImage;
 
   const handleSubmit = async () => {
     if (!canSubmit) return;
@@ -115,7 +119,8 @@ export function BoardWriteClient() {
         contentHtml: contentHtml.trim() ? contentHtml : undefined,
         category,
         subCategory: hasSubCategories(category) ? subCategory : null,
-        thumbnail: images[0],
+        // 썸네일: 첫 번째 이미지의 thumb URL (목록/홈 표시용)
+        thumbnail: thumbImages[0] ?? images[0],
         images: images.length > 0 ? images : undefined,
       };
 
@@ -254,22 +259,42 @@ export function BoardWriteClient() {
                         const files = Array.from(e.target.files ?? []);
                         if (files.length === 0) return;
 
-                        const picked = files.slice(0, 3);
-                        const results: string[] = [];
-                        for (const file of picked) {
-                          const url = await boardImageFileToDataUrl(file);
-                          if (url) results.push(url);
+                        const currentCount = images.length;
+                        const remaining = 3 - currentCount;
+                        if (remaining <= 0) return;
+
+                        const picked = files.slice(0, remaining);
+                        setIsUploadingImage(true);
+                        try {
+                          const fullUrls: string[] = [];
+                          const thumbUrls: string[] = [];
+                          for (const file of picked) {
+                            const result = await uploadBoardImage(file);
+                            if (result) {
+                              fullUrls.push(result.url);
+                              thumbUrls.push(result.thumbUrl);
+                            }
+                          }
+                          const rejected = picked.length - fullUrls.length;
+                          if (rejected > 0) {
+                            setImageError(
+                              `이미지 ${rejected}개를 업로드하지 못했습니다. (원본 장당 최대 ${BOARD_IMAGE_MAX_PICK_MB}MB, JPG/PNG 등)`,
+                            );
+                          }
+                          setImages((prev) => [...prev, ...fullUrls].slice(0, 3));
+                          setThumbImages((prev) => [...prev, ...thumbUrls].slice(0, 3));
+                        } finally {
+                          setIsUploadingImage(false);
                         }
-                        const rejected = picked.length - results.length;
-                        if (rejected > 0) {
-                          setImageError(
-                            `이미지 ${rejected}개를 첨부하지 못했습니다. (원본 장당 최대 ${BOARD_IMAGE_MAX_PICK_MB}MB, JPG/PNG 등)`,
-                          );
-                        }
-                        setImages((prev) => [...prev, ...results].slice(0, 3));
                         e.currentTarget.value = "";
                       }}
                     />
+                    {isUploadingImage && (
+                      <p className="text-xs text-muted-foreground flex items-center gap-1">
+                        <Loader2 className="size-3 animate-spin" />
+                        이미지 업로드 중...
+                      </p>
+                    )}
                     {imageError && <p className="text-xs text-destructive">{imageError}</p>}
 
                     {images.length > 0 ? (
@@ -283,7 +308,10 @@ export function BoardWriteClient() {
                             <button
                               type="button"
                               className="absolute top-1 right-1 rounded-md bg-background/80 px-2 py-0.5 text-xs text-foreground hover:bg-background"
-                              onClick={() => setImages((prev) => prev.filter((_, i) => i !== idx))}
+                              onClick={() => {
+                                setImages((prev) => prev.filter((_, i) => i !== idx));
+                                setThumbImages((prev) => prev.filter((_, i) => i !== idx));
+                              }}
                             >
                               제거
                             </button>
@@ -308,6 +336,7 @@ export function BoardWriteClient() {
                           title,
                           contentHtml,
                           images,
+                          thumbImages,
                           savedAt: new Date().toISOString(),
                         };
                         window.localStorage.setItem(draftKey, JSON.stringify(draft));
@@ -329,6 +358,7 @@ export function BoardWriteClient() {
                           title,
                           contentHtml,
                           images,
+                          thumbImages,
                           savedAt: new Date().toISOString(),
                         };
                         window.localStorage.setItem(draftKey, JSON.stringify(draft));
@@ -349,11 +379,13 @@ export function BoardWriteClient() {
                             title?: string;
                             contentHtml?: string;
                             images?: string[];
+                            thumbImages?: string[];
                           };
                           if (d.category) setCategory(d.category);
                           setTitle(d.title ?? "");
                           setContentHtml(d.contentHtml ?? "");
                           setImages(Array.isArray(d.images) ? d.images : []);
+                          setThumbImages(Array.isArray(d.thumbImages) ? d.thumbImages : []);
                           toast.success("임시 저장된 글을 불러왔습니다.");
                         } catch {
                           // ignore

@@ -108,7 +108,12 @@ export async function GET(request: Request) {
     const from = (page - 1) * limit;
     const to = from + limit - 1;
 
-    let query = supabase.from("board_posts").select("*", { count: "exact", head: false });
+    // images(JSONB), content_html 은 목록에서 불필요 → 제외해 페이로드 최소화
+    // 단일 조회(id 지정)는 위에서 select("*") 로 전체 반환
+    const LIST_COLS =
+      "id, title, content, category, sub_category, author_name, author_id, " +
+      "thumbnail_url, views, comment_count, is_hot, created_at, updated_at";
+    let query = supabase.from("board_posts").select(LIST_COLS, { count: "exact", head: false });
 
     if (authorId) {
       query = query.eq("author_id", authorId);
