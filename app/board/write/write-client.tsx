@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeft, ImagePlus, Loader2 } from "lucide-react";
+import { ArrowLeft, Camera, Images, Loader2 } from "lucide-react";
 import { Navbar } from "@/components/navbar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -248,47 +248,87 @@ export function BoardWriteClient() {
 
                   <div className="space-y-2">
                     <Label>
-                      이미지 첨부 (최대 3장, 원본 장당 최대 {BOARD_IMAGE_MAX_PICK_MB}MB · 큰 사진은 자동 압축)
+                      이미지 첨부 (최대 3장, 장당 최대 {BOARD_IMAGE_MAX_PICK_MB}MB)
                     </Label>
-                    <Input
-                      type="file"
-                      accept="image/*"
-                      multiple
-                      onChange={async (e) => {
-                        setImageError(null);
-                        const files = Array.from(e.target.files ?? []);
-                        if (files.length === 0) return;
 
-                        const currentCount = images.length;
-                        const remaining = 3 - currentCount;
-                        if (remaining <= 0) return;
-
-                        const picked = files.slice(0, remaining);
-                        setIsUploadingImage(true);
-                        try {
-                          const fullUrls: string[] = [];
-                          const thumbUrls: string[] = [];
-                          for (const file of picked) {
-                            const result = await uploadBoardImage(file);
-                            if (result) {
-                              fullUrls.push(result.url);
-                              thumbUrls.push(result.thumbUrl);
+                    {/* 갤러리 / 카메라 버튼 */}
+                    <div className="flex gap-2">
+                      {/* 갤러리에서 선택 */}
+                      <label className={`flex-1 flex items-center justify-center gap-2 h-10 rounded-md border border-input bg-background px-3 text-sm font-medium cursor-pointer transition-colors hover:bg-accent hover:text-accent-foreground ${images.length >= 3 || isUploadingImage ? "opacity-50 pointer-events-none" : ""}`}>
+                        <Images className="size-4" />
+                        갤러리
+                        <input
+                          type="file"
+                          accept="image/*"
+                          multiple
+                          className="hidden"
+                          disabled={images.length >= 3 || isUploadingImage}
+                          onChange={async (e) => {
+                            setImageError(null);
+                            const files = Array.from(e.target.files ?? []);
+                            if (files.length === 0) return;
+                            const remaining = 3 - images.length;
+                            if (remaining <= 0) return;
+                            const picked = files.slice(0, remaining);
+                            setIsUploadingImage(true);
+                            try {
+                              const fullUrls: string[] = [];
+                              const thumbUrls: string[] = [];
+                              for (const file of picked) {
+                                const result = await uploadBoardImage(file);
+                                if (result) {
+                                  fullUrls.push(result.url);
+                                  thumbUrls.push(result.thumbUrl);
+                                }
+                              }
+                              const rejected = picked.length - fullUrls.length;
+                              if (rejected > 0) {
+                                setImageError(`이미지 ${rejected}개를 업로드하지 못했습니다. (최대 ${BOARD_IMAGE_MAX_PICK_MB}MB, JPG/PNG 등)`);
+                              }
+                              setImages((prev) => [...prev, ...fullUrls].slice(0, 3));
+                              setThumbImages((prev) => [...prev, ...thumbUrls].slice(0, 3));
+                            } finally {
+                              setIsUploadingImage(false);
                             }
-                          }
-                          const rejected = picked.length - fullUrls.length;
-                          if (rejected > 0) {
-                            setImageError(
-                              `이미지 ${rejected}개를 업로드하지 못했습니다. (원본 장당 최대 ${BOARD_IMAGE_MAX_PICK_MB}MB, JPG/PNG 등)`,
-                            );
-                          }
-                          setImages((prev) => [...prev, ...fullUrls].slice(0, 3));
-                          setThumbImages((prev) => [...prev, ...thumbUrls].slice(0, 3));
-                        } finally {
-                          setIsUploadingImage(false);
-                        }
-                        e.currentTarget.value = "";
-                      }}
-                    />
+                            e.currentTarget.value = "";
+                          }}
+                        />
+                      </label>
+
+                      {/* 카메라로 찍기 */}
+                      <label className={`flex-1 flex items-center justify-center gap-2 h-10 rounded-md border border-input bg-background px-3 text-sm font-medium cursor-pointer transition-colors hover:bg-accent hover:text-accent-foreground ${images.length >= 3 || isUploadingImage ? "opacity-50 pointer-events-none" : ""}`}>
+                        <Camera className="size-4" />
+                        카메라
+                        <input
+                          type="file"
+                          accept="image/*"
+                          capture="environment"
+                          className="hidden"
+                          disabled={images.length >= 3 || isUploadingImage}
+                          onChange={async (e) => {
+                            setImageError(null);
+                            const files = Array.from(e.target.files ?? []);
+                            if (files.length === 0) return;
+                            const remaining = 3 - images.length;
+                            if (remaining <= 0) return;
+                            const file = files[0];
+                            setIsUploadingImage(true);
+                            try {
+                              const result = await uploadBoardImage(file);
+                              if (result) {
+                                setImages((prev) => [...prev, result.url].slice(0, 3));
+                                setThumbImages((prev) => [...prev, result.thumbUrl].slice(0, 3));
+                              } else {
+                                setImageError("카메라 사진을 업로드하지 못했습니다.");
+                              }
+                            } finally {
+                              setIsUploadingImage(false);
+                            }
+                            e.currentTarget.value = "";
+                          }}
+                        />
+                      </label>
+                    </div>
                     {isUploadingImage && (
                       <p className="text-xs text-muted-foreground flex items-center gap-1">
                         <Loader2 className="size-3 animate-spin" />
@@ -320,7 +360,7 @@ export function BoardWriteClient() {
                       </div>
                     ) : (
                       <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                        <ImagePlus className="size-4" />
+                        <Images className="size-4" />
                         첨부한 첫 이미지는 목록에서 썸네일로 표시됩니다.
                       </div>
                     )}
